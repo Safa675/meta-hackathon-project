@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeEntry, toInboxMarkdown, fromInboxMarkdown } from "../src/entry.js";
+import { makeEntry, toInboxMarkdown, fromInboxMarkdown } from "../memory/entry.js";
 
 const sample = {
   kind: "decision",

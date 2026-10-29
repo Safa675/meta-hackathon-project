@@ -42,7 +42,7 @@ export function loadBrain(files) {
   const entries = [];
   const documents = [];
   const skipped = [];
-  const seen = new Set();
+  const seen = new Map(); // key -> index in entries
 
   for (const { path: raw, text } of files) {
     const path = norm(raw);
@@ -56,8 +56,12 @@ export function loadBrain(files) {
       try {
         const e = isLog ? fromLogMarkdown(text) : fromInboxMarkdown(text);
         const key = `${e.date}|${e.topic}|${e.title}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        // The consolidated log copy wins over a pending inbox copy, whatever the file order.
+        if (seen.has(key)) {
+          if (isLog) entries[seen.get(key)] = { ...e, path };
+          continue;
+        }
+        seen.set(key, entries.length);
         entries.push({ ...e, path });
       } catch (err) {
         skipped.push({ path, reason: err.message });

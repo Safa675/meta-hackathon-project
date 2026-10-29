@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBrain, openLoops, fromLogMarkdown } from "../src/brain.js";
+import { loadBrain, openLoops, fromLogMarkdown } from "../memory/brain.js";
 
 // Synthetic fixtures only. No real brain content in this repo.
 const logNote = `---
@@ -65,11 +65,14 @@ test("the same entry in inbox and log is counted once", () => {
   const pendingCopy = inboxNote
     .replace("Email the vendor", "Pick a vendor for the widget")
     .replace("2026-10-14", "2026-10-13");
-  const { entries } = loadBrain([
-    { path: "notes/log/2026/a.md", text: logNote },
-    { path: "inbox/a.md", text: pendingCopy },
-  ]);
-  assert.equal(entries.length, 1);
+  for (const files of [
+    [{ path: "notes/log/2026/a.md", text: logNote }, { path: "inbox/a.md", text: pendingCopy }],
+    [{ path: "inbox/a.md", text: pendingCopy }, { path: "notes/log/2026/a.md", text: logNote }],
+  ]) {
+    const { entries } = loadBrain(files);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].path, "notes/log/2026/a.md"); // log copy wins either way
+  }
 });
 
 test("open loops are entries with a next action", () => {
