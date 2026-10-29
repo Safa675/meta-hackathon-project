@@ -10,8 +10,25 @@ export function fold(s) {
   return s.replace(/[İIı]/g, "i").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
+// URL debris: matches any note that contains a link, so it carries no meaning.
+const STOP = new Set(["com", "www", "http", "https", "org", "net", "html"]);
+
 export function tokenize(s) {
-  return fold(s ?? "").split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 1);
+  return fold(s ?? "").split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 1 && !STOP.has(t));
+}
+
+// "www.youtube.com" -> "youtube", "mail.google.com" -> "mail google", "x.com.tr" -> "x".
+export function hostWords(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return "";
+  }
+  const labels = host.split(".").filter((l) => l !== "www");
+  labels.pop(); // TLD
+  if (labels.length > 1 && ["co", "com", "org", "net", "gov", "edu"].includes(labels.at(-1))) labels.pop();
+  return labels.join(" ");
 }
 
 export const entryDoc = (e) => ({
@@ -22,6 +39,14 @@ export const entryDoc = (e) => ({
 });
 
 export const noteDoc = (d) => ({ ref: { type: "note", path: d.path }, title: d.title, text: d.text, item: d });
+
+// An entry's topic, or for a note the folder under notes/ (notes/topics/<name>.md counts as <name>).
+export function topicOf(doc) {
+  if (doc.ref.type === "entry") return doc.item.topic;
+  const [, first, second] = doc.ref.path.split("/");
+  if (!second) return "general";
+  return first === "topics" ? second.replace(/\.md$/, "") : first;
+}
 
 export function buildIndex(docs) {
   const postings = new Map(); // term -> Map(docIndex -> weighted tf)
@@ -60,4 +85,27 @@ export function search(index, query, { limit = 10, filter } = {}) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([i, score]) => ({ ...docs[i], score }));
+}
+
+// Share of a topic slug's words that appear in the query: "meta-hackathon" is
+// fully named by "meta-hackathon-project", half named by "Meta Muse".
+export function slugMatch(topic, queryTokens) {
+  const parts = tokenize(topic.replace(/-/g, " "));
+  return parts.length ? parts.filter((p) => queryTokens.has(p)).length / parts.length : 0;
+}
+
+// Ranks like search(), then boosts hits whose topic the query names or that the
+// caller marks as current (the stated intent's topic). Loose keyword hits from an
+// unrelated topic sink below the boosted ones; nothing is excluded, and the same
+// entries rise when the activity is about their topic.
+export function topicSearch(index, query, { limit = 10, filter, topics = [], boost = 2 } = {}) {
+  const q = new Set(tokenize(query));
+  return search(index, query, { limit: Infinity, filter })
+    .map((d) => {
+      const t = topicOf(d);
+      const named = Math.max(slugMatch(t, q), topics.includes(t) ? 1 : 0);
+      return { ...d, score: d.score * (1 + boost * named) };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }

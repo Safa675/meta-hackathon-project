@@ -16,7 +16,7 @@ importBrain(folder) ──► log + notes (snapshot of a second brain)
 | `entry.js` | Entry format and validation; inbox Markdown in and out |
 | `brain.js` | Reads a brain checkout: `inbox/`, `notes/log/`, other notes; open loops |
 | `consolidate.js` | Inbox → log: validate, redact secret-shaped strings, drop unchanged restatements, id |
-| `recall.js` | In-memory BM25 over entries and notes. İ/I/ı/i fold to one letter; diacritics stripped |
+| `recall.js` | In-memory BM25 over entries and notes. İ/I/ı/i fold to one letter; diacritics stripped; URL debris (`com`, `www`…) ignored. `topicSearch` boosts topics the tab names or the stated intent belongs to, so loose keyword hits from unrelated topics sink; nothing is excluded |
 | `context.js` | Context pack: latest intent, open loops and notes related to the current tab, rendered for a prompt |
 | `db.js` | IndexedDB stores: `entries` (by id, indexed by status), `notes` (by path) |
 | `connector.js` | Brain folder access (File System Access API): read, and write entries into `inbox/` |

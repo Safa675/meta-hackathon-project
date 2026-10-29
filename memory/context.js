@@ -1,7 +1,7 @@
 // Context pack: what the agent needs to judge the current activity.
 // The latest stated intent, the open loops related to what is on screen, and
 // related notes, rendered as one bounded text block for a model prompt.
-import { search } from "./recall.js";
+import { topicSearch, hostWords } from "./recall.js";
 
 const isOpenLoop = (doc) => doc.ref.type === "entry" && doc.item.next && doc.item.next !== "none";
 
@@ -14,16 +14,14 @@ export function latestIntent(entries) {
 // activity: { title, url } of what the user is looking at now.
 export function contextPack(index, entries, activity, { loops = 5, notes = 5 } = {}) {
   const intent = latestIntent(entries);
-  let host = "";
-  try {
-    host = new URL(activity.url).hostname;
-  } catch {}
-  const query = [activity.title, host, intent?.title].filter(Boolean).join(" ");
+  const query = [activity.title, hostWords(activity.url), intent?.title].filter(Boolean).join(" ");
+  // Topics named by the tab, plus the stated intent's topic, rank first.
+  const topics = intent ? [intent.topic] : [];
   return {
     activity,
     intent,
-    openLoops: search(index, query, { limit: loops, filter: isOpenLoop }).map((d) => d.item),
-    related: search(index, query, { limit: notes, filter: (d) => !isOpenLoop(d) }).map((d) => ({
+    openLoops: topicSearch(index, query, { limit: loops, filter: isOpenLoop, topics }).map((d) => d.item),
+    related: topicSearch(index, query, { limit: notes, filter: (d) => !isOpenLoop(d), topics }).map((d) => ({
       type: d.ref.type,
       title: d.title,
       text: d.text,
