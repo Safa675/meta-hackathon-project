@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Meta Hackathon Project</title>
+<style>
+  body { font: 14px system-ui; width: 320px; padding: 12px; }
+  input { width: 100%; box-sizing: border-box; margin: 4px 0 8px; padding: 6px; }
+  button { padding: 6px 10px; }
+  #left { margin-top: 12px; color: #444; }
+</style>
+<label>What are you about to do?</label>
+<input id="title" placeholder="e.g. fix the auth bug in login.ts">
+<label>Next step when you're back</label>
+<input id="next" placeholder="e.g. review the diff">
+<button id="save">Save</button>
+<button id="export">Export to brain inbox</button>
+<div id="left"></div>
+<script type="module" src="popup.js"></script>

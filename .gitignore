@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.pem
+inbox-export/
+brain/
+.DS_Store

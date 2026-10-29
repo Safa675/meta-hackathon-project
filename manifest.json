@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Meta Hackathon Project",
+  "version": "0.0.1",
+  "description": "Remembers what you were doing while your coding agent runs, and hands you back the thread.",
+  "permissions": ["storage", "tabs", "alarms", "downloads"],
+  "host_permissions": ["https://claude.ai/code/*"],
+  "background": { "service_worker": "src/background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/code/*"],
+      "js": ["src/content/claude-code.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup/popup.html" },
+  "options_page": "options/options.html"
+}
