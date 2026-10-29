@@ -40,7 +40,7 @@ test("slugMatch scores how much of a topic slug the query names", () => {
   const q = new Set(tokenize("meta-hackathon-project"));
   assert.equal(slugMatch("meta-hackathon", q), 1);
   assert.equal(slugMatch("bist-quant", new Set(tokenize("BIST 100"))), 0.5);
-  assert.equal(slugMatch("dating", q), 0);
+  assert.equal(slugMatch("travel", q), 0);
 });
 
 test("hostnames reduce to their name; URL debris is not a search word", () => {
