@@ -1,13 +1,13 @@
 // Live check against a real model provider: one ping, then one distill on
 // synthetic activity. Reads the key from the environment, never from a file:
 //   MODEL_API_KEY   required
-//   MODEL_PROVIDER  meta | together | fireworks | baseten | groq | nebius (default: together)
+//   MODEL_PROVIDER  meta-contributor (default) | meta | openrouter | ollama | together | fireworks | baseten | groq | nebius
 //   MODEL_BASE_URL, MODEL_ID  optional overrides
 import { modelClient } from "../../memory/model.js";
 import { distillMessages, parseEntries } from "../../memory/distill.js";
 
 const complete = modelClient({
-  provider: process.env.MODEL_PROVIDER ?? "together",
+  provider: process.env.MODEL_PROVIDER ?? "meta-contributor",
   baseUrl: process.env.MODEL_BASE_URL,
   model: process.env.MODEL_ID,
   apiKey: process.env.MODEL_API_KEY,

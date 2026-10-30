@@ -19,13 +19,25 @@ test("provider presets resolve to base URL and model", () => {
     apiKey: "k",
   });
   assert.equal(resolveConfig({ provider: "meta", apiKey: "k" }).model, "muse-spark-1.3");
+  assert.equal(resolveConfig({ apiKey: "k" }).model, "muse-spark-1.3-contributor"); // default
+  assert.equal(resolveConfig({ provider: "openrouter", apiKey: "k" }).model, "meta/muse-glimmer-30b");
   assert.equal(resolveConfig({ baseUrl: "https://x.test/v1/", model: "m", apiKey: "k" }).baseUrl, "https://x.test/v1");
-  assert.ok(Object.values(PROVIDERS).every((p) => p.baseUrl.startsWith("https://")));
+  // Only the local Ollama server is plain http.
+  for (const [name, p] of Object.entries(PROVIDERS)) {
+    assert.ok(p.baseUrl.startsWith(name === "ollama" ? "http://localhost" : "https://"), name);
+  }
 });
 
-test("missing key or unknown provider fails before any call", () => {
+test("missing key or unknown provider fails before any call; local Ollama needs no key", () => {
   assert.throws(() => resolveConfig({ provider: "together" }), /no API key/);
   assert.throws(() => resolveConfig({ provider: "nope", apiKey: "k" }), /unknown provider/);
+  assert.equal(resolveConfig({ provider: "ollama" }).baseUrl, "http://localhost:11434/v1");
+});
+
+test("no Authorization header without a key (local Ollama)", async () => {
+  const seen = [];
+  await modelClient({ provider: "ollama" }, fakeFetch(200, { choices: [{ message: { content: "ok" } }] }, seen))([]);
+  assert.equal(seen[0].init.headers.Authorization, undefined);
 });
 
 test("sends an OpenAI-style chat request and returns the text", async () => {

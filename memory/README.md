@@ -66,9 +66,18 @@ Entry fields follow the second-brain record: `kind` (`decision|fact|preference|e
 
 ## Model
 
-`model.js` speaks OpenAI-compatible chat completions. Presets: `meta` (Meta Model API, `muse-spark-1.3`) and the hosted providers Meta lists for Muse Spark Open (`together`, `fireworks`, `baseten`, `groq`, `nebius`). Muse Spark Open is not served on Meta's Model API. Settings, including the API key, are kept in `chrome.storage.session` (cleared when the browser closes) unless the user chooses to remember them on the device.
+`model.js` speaks OpenAI-compatible chat completions. Presets:
 
-Live check: `MODEL_API_KEY=… MODEL_PROVIDER=together npm run test:live`.
+| Preset | Model | Note |
+|---|---|---|
+| `meta-contributor` (default) | `muse-spark-1.3-contributor` on Meta's Model API | Cheapest; Meta may train on inputs and outputs; offered only in some countries |
+| `meta` | `muse-spark-1.3` on Meta's Model API | Standard price, not used for training |
+| `openrouter` | `meta/muse-glimmer-30b` | Muse Glimmer is not served on Meta's Model API |
+| `ollama` | `muse-glimmer` on `localhost:11434` | Local; no key. Ollama must allow the extension origin (`OLLAMA_ORIGINS`) |
+| `together`, `fireworks`, `baseten`, `groq`, `nebius` | Muse Spark Open | The hosts Meta's deploy docs list; not on Meta's Model API |
+ Settings, including the API key, are kept in `chrome.storage.session` (cleared when the browser closes) unless the user chooses to remember them on the device.
+
+Live checks: `npm run test:live` (one ping and one distill) and `npm run test:live:audit` (see [agent/README.md](../agent/README.md)), with `MODEL_API_KEY` in the environment.
 
 ## Not tested
 

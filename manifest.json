@@ -15,7 +15,9 @@
     "https://api.fireworks.ai/*",
     "https://inference.baseten.co/*",
     "https://api.groq.com/*",
-    "https://api.tokenfactory.us-north1.nebius.com/*"
+    "https://api.tokenfactory.us-north1.nebius.com/*",
+    "https://openrouter.ai/*",
+    "http://localhost:11434/*"
   ],
   "background": {
     "service_worker": "extension/background.js",

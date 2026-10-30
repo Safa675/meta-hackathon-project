@@ -1,10 +1,17 @@
-// Model client for OpenAI-compatible chat completions. "meta" is Meta's Model
-// API (Muse Spark 1.3). Muse Spark Open is not served there; the other entries
-// are the hosted providers Meta's deploy docs list for it
-// (dev.meta.ai/docs/muse-spark-open/deploy).
+// Model client for OpenAI-compatible chat completions.
+// "meta-contributor" (the default) and "meta" are Meta's Model API: same model;
+// Contributor costs far less, Meta may train on its inputs and outputs, and it is
+// only offered in some countries. Muse Spark Open and Muse Glimmer are not
+// served on the Model API: the Spark Open entries are the hosts Meta's deploy
+// docs list; Glimmer is on OpenRouter or runs locally through Ollama.
+
+export const DEFAULT_PROVIDER = "meta-contributor";
 
 export const PROVIDERS = {
+  "meta-contributor": { baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3-contributor" },
   meta: { baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3" },
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", model: "meta/muse-glimmer-30b" },
+  ollama: { baseUrl: "http://localhost:11434/v1", model: "muse-glimmer" },
   together: { baseUrl: "https://api.together.xyz/v1", model: "meta-models/muse-spark-open" },
   fireworks: { baseUrl: "https://api.fireworks.ai/inference/v1", model: "accounts/fireworks/models/muse-spark-open" },
   baseten: { baseUrl: "https://inference.baseten.co/v1", model: "meta-models/muse-spark-open" },
@@ -12,11 +19,12 @@ export const PROVIDERS = {
   nebius: { baseUrl: "https://api.tokenfactory.us-north1.nebius.com/v1", model: "meta-models/muse-spark-open" },
 };
 
-export function resolveConfig({ provider = "together", baseUrl, model, apiKey } = {}) {
+export function resolveConfig({ provider = DEFAULT_PROVIDER, baseUrl, model, apiKey } = {}) {
   const p = PROVIDERS[provider] ?? {};
   const config = { baseUrl: (baseUrl ?? p.baseUrl ?? "").replace(/\/$/, ""), model: model ?? p.model, apiKey };
   if (!config.baseUrl || !config.model) throw new Error(`unknown provider "${provider}" and no baseUrl/model given`);
-  if (!config.apiKey) throw new Error("no API key set");
+  // A local Ollama server needs no key.
+  if (!config.apiKey && provider !== "ollama") throw new Error("no API key set");
   return config;
 }
 
@@ -26,7 +34,7 @@ export function modelClient(settings, fetchImpl = globalThis.fetch) {
   return async function complete(messages, { maxTokens = 1024, temperature = 0.2 } = {}) {
     const res = await fetchImpl(`${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(apiKey && { Authorization: `Bearer ${apiKey}` }) },
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     if (!res.ok) throw new Error(`model call failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);

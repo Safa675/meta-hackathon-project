@@ -9,6 +9,7 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 | Folder | Owner | What |
 |---|---|---|
 | `memory/` | Safa | Memory: entries, consolidation, recall, context pack, brain folder connector. See [memory/README.md](memory/README.md) |
+| `agent/` | Safa | The audit: stated intent and open loops vs. recent activity → verdict and nudge. See [agent/README.md](agent/README.md) |
 | `extension/` | İrem | Extension shell and UI. Current files are placeholders that show how to call memory |
 | `manifest.json` | İrem | At the root so Chrome can load both folders |
 | `test/` | both | `npm test` (node), `npm run test:browser` (real Chromium) |
@@ -18,7 +19,7 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 Memory is complete and tested (node and real Chromium): entries, consolidation, topic-aware recall, context pack, activity log, distill, scheduled upkeep, and the brain folder connection (import, export, re-sync from the remembered folder). See [memory/README.md](memory/README.md).
 
 Not done:
-- The agent loop: the audit call on the context pack and activity (required for the hackathon).
+- The audit has not run against the real model yet (`npm run test:live:audit`).
 - Tab capture in the extension (`memory.recordActivity` is ready for it) and the UI.
 - Agent status from claude.ai/code (`extension/content/claude-code.js` is a stub; DOM unverified).
 
@@ -36,6 +37,7 @@ The demo runs on the author's own second brain, loaded locally at demo time. It 
 npm test                  # node unit tests
 npm run test:browser      # loads the extension in Chromium; needs Playwright
 npm run test:live         # real model call; needs MODEL_API_KEY in the environment
+npm run test:live:audit   # audit scenarios against the real model
 ```
 
 Load unpacked: `chrome://extensions` → Developer mode → Load unpacked → this folder.
