@@ -16,6 +16,14 @@ export async function readBrainFolder(dir, prefix = "") {
   return files;
 }
 
+// "granted" | "prompt" | "denied". Asking (prompt: true) needs a user click,
+// so background code only checks.
+export async function permission(dir, mode, { prompt = false } = {}) {
+  const state = await dir.queryPermission({ mode });
+  if (state === "granted" || !prompt) return state;
+  return dir.requestPermission({ mode });
+}
+
 // Same naming as the brain's inbox files: <UTC timestamp>-<host>-<source>-<id6>.md
 export function inboxFileName(entry, host, now = new Date()) {
   const ts = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -23,9 +31,6 @@ export function inboxFileName(entry, host, now = new Date()) {
 }
 
 export async function writeInboxEntry(dir, entry, host = "browser") {
-  if ((await dir.requestPermission({ mode: "readwrite" })) !== "granted") {
-    throw new Error("no write permission on the brain folder");
-  }
   const inbox = await dir.getDirectoryHandle("inbox", { create: true });
   const file = await inbox.getFileHandle(inboxFileName(entry, host), { create: true });
   const w = await file.createWritable();

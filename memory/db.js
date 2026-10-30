@@ -1,15 +1,24 @@
-// IndexedDB store. entries: keyed by id, indexed by status ("inbox" | "log").
+// IndexedDB store.
+// entries: keyed by id, indexed by status ("inbox" | "log").
 // notes: free-form brain documents keyed by path.
+// activity: raw tab events, auto-increment key, indexed by ts.
+// meta: small key/value records (the brain folder handle).
 
-const VERSION = 1;
+const VERSION = 2;
 
 export function openDb(name = "memory") {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name, VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (ev) => {
       const db = req.result;
-      db.createObjectStore("entries", { keyPath: "id" }).createIndex("status", "status");
-      db.createObjectStore("notes", { keyPath: "path" });
+      if (ev.oldVersion < 1) {
+        db.createObjectStore("entries", { keyPath: "id" }).createIndex("status", "status");
+        db.createObjectStore("notes", { keyPath: "path" });
+      }
+      if (ev.oldVersion < 2) {
+        db.createObjectStore("activity", { autoIncrement: true }).createIndex("ts", "ts");
+        db.createObjectStore("meta", { keyPath: "key" });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -37,3 +46,24 @@ export const removeAll = (db, store, keys) =>
   tx(db, store, "readwrite", (s) => keys.forEach((k) => s.delete(k)));
 
 export const clear = (db, store) => tx(db, store, "readwrite", (s) => s.clear());
+
+export const append = (db, store, item) => tx(db, store, "readwrite", (s) => s.add(item));
+
+export const since = (db, store, ts) =>
+  tx(db, store, "readonly", (s) => s.index("ts").getAll(IDBKeyRange.lowerBound(ts)));
+
+export const deleteBefore = (db, store, ts) =>
+  tx(db, store, "readwrite", (s) => {
+    const req = s.index("ts").openCursor(IDBKeyRange.upperBound(ts, true));
+    req.onsuccess = () => {
+      const c = req.result;
+      if (c) {
+        c.delete();
+        c.continue();
+      }
+    };
+  });
+
+export const getMeta = async (db, key) => (await tx(db, "meta", "readonly", (s) => s.get(key)))?.value;
+
+export const setMeta = (db, key, value) => tx(db, "meta", "readwrite", (s) => s.put({ key, value }));

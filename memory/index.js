@@ -1,11 +1,17 @@
 // Public memory API. The extension talks to memory only through this class.
 import { makeEntry } from "./entry.js";
 import { loadBrain, openLoops } from "./brain.js";
-import { consolidate, entryId } from "./consolidate.js";
+import { consolidate, entryId, entryKey } from "./consolidate.js";
 import { buildIndex, search, entryDoc, noteDoc } from "./recall.js";
 import { contextPack, renderPack, latestIntent } from "./context.js";
-import { openDb, getAll, byStatus, putAll, removeAll, clear } from "./db.js";
-import { readBrainFolder, writeInboxEntry } from "./connector.js";
+import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activity.js";
+import { distillMessages, parseEntries } from "./distill.js";
+import * as db from "./db.js";
+import { readBrainFolder, writeInboxEntry, permission } from "./connector.js";
+
+const MINUTE = 60 * 1000;
+const DAY = 24 * 60 * MINUTE;
+const today = () => new Date().toISOString().slice(0, 10);
 
 export class Memory {
   #db;
@@ -14,14 +20,14 @@ export class Memory {
 
   static async open(name) {
     const m = new Memory();
-    m.#db = await openDb(name);
+    m.#db = await db.openDb(name);
     return m;
   }
 
   async #load() {
     if (this.#index) return;
-    this.#entries = await getAll(this.#db, "entries");
-    const notes = await getAll(this.#db, "notes");
+    this.#entries = await db.getAll(this.#db, "entries");
+    const notes = await db.getAll(this.#db, "notes");
     this.#index = buildIndex([...this.#entries.map(entryDoc), ...notes.map(noteDoc)]);
   }
 
@@ -29,17 +35,21 @@ export class Memory {
     this.#index = null;
   }
 
-  // One-time import of a brain snapshot: [{ path, text }]. Replaces earlier imports.
+  // ---- Brain -------------------------------------------------------------
+
+  // Import a brain snapshot: [{ path, text }]. Replaces the previous import and keeps
+  // the extension's own entries, except those the brain now holds (exported earlier).
   async importFiles(files) {
     const { entries, documents, skipped } = loadBrain(files);
-    const own = (await getAll(this.#db, "entries")).filter((e) => !e.path);
-    await clear(this.#db, "entries");
-    await clear(this.#db, "notes");
-    await putAll(this.#db, "entries", [
+    const brainKeys = new Set(entries.map(entryKey));
+    const own = (await db.getAll(this.#db, "entries")).filter((e) => !e.path && !brainKeys.has(entryKey(e)));
+    await db.clear(this.#db, "entries");
+    await db.clear(this.#db, "notes");
+    await db.putAll(this.#db, "entries", [
       ...own,
       ...entries.map((e) => ({ ...e, id: e.id ?? entryId(e), status: e.path.startsWith("inbox/") ? "inbox" : "log" })),
     ]);
-    await putAll(this.#db, "notes", documents);
+    await db.putAll(this.#db, "notes", documents);
     this.#dirty();
     return { entries: entries.length, notes: documents.length, skipped };
   }
@@ -48,24 +58,51 @@ export class Memory {
     return this.importFiles(await readBrainFolder(dirHandle));
   }
 
+  // Remember the folder (handles survive in IndexedDB) and import it.
+  async connectBrain(dirHandle) {
+    await db.setMeta(this.#db, "brain", dirHandle);
+    return this.importBrain(dirHandle);
+  }
+
+  // Re-import the remembered folder. prompt: true only from a user click.
+  async syncBrain({ prompt = false } = {}) {
+    const dir = await db.getMeta(this.#db, "brain");
+    if (!dir) return { connected: false };
+    if ((await permission(dir, "read", { prompt })) !== "granted") return { connected: true, needsPermission: true };
+    return { connected: true, ...(await this.importBrain(dir)) };
+  }
+
+  // Write consolidated entries made here into the brain's inbox/, once each.
+  async exportPending({ prompt = false, host = "browser" } = {}) {
+    const dir = await db.getMeta(this.#db, "brain");
+    if (!dir) return { exported: 0, connected: false };
+    if ((await permission(dir, "readwrite", { prompt })) !== "granted") return { exported: 0, needsPermission: true };
+    const pending = (await db.byStatus(this.#db, "log")).filter((e) => !e.path && !e.exported);
+    for (const e of pending) await writeInboxEntry(dir, e, host);
+    await db.putAll(this.#db, "entries", pending.map((e) => ({ ...e, exported: true })));
+    return { exported: pending.length };
+  }
+
+  // ---- Entries -----------------------------------------------------------
+
   // New entry from the extension. Lands in the inbox until consolidate().
   async add(fields) {
     const entry = makeEntry({ source: "extension", ...fields });
     const stored = { ...entry, id: entryId(entry), status: "inbox", ts: Date.now() };
-    await putAll(this.#db, "entries", [stored]);
+    await db.putAll(this.#db, "entries", [stored]);
     this.#dirty();
     return stored;
   }
 
   async consolidate() {
-    const pending = await byStatus(this.#db, "inbox");
-    const existing = await byStatus(this.#db, "log");
+    const pending = await db.byStatus(this.#db, "inbox");
+    const existing = await db.byStatus(this.#db, "log");
     const result = consolidate(pending, existing);
     // Rejected entries stay in the inbox with their errors attached; the rest leave it.
     // Redaction can change an accepted entry's id, so remove by the pending ids.
     const flagged = result.rejected.map(({ entry, errors }) => ({ ...entry, errors }));
-    await removeAll(this.#db, "entries", pending.map((e) => e.id));
-    await putAll(this.#db, "entries", [...result.accepted.map((e) => ({ ...e, ts: e.ts ?? Date.now() })), ...flagged]);
+    await db.removeAll(this.#db, "entries", pending.map((e) => e.id));
+    await db.putAll(this.#db, "entries", [...result.accepted.map((e) => ({ ...e, ts: e.ts ?? Date.now() })), ...flagged]);
     this.#dirty();
     return {
       accepted: result.accepted.length,
@@ -90,6 +127,11 @@ export class Memory {
     return latestIntent(this.#entries);
   }
 
+  async topics() {
+    await this.#load();
+    return [...new Set(this.#entries.map((e) => e.topic))].sort();
+  }
+
   // activity: { title, url }. Returns { pack, prompt }.
   async contextPack(activity, opts) {
     await this.#load();
@@ -97,7 +139,57 @@ export class Memory {
     return { pack, prompt: renderPack(pack, opts) };
   }
 
-  // Live connection: write an entry back into the user's brain inbox/.
+  // ---- Activity ----------------------------------------------------------
+
+  // event: { url, title, kind: "focus" | "idle", ts }. The extension calls this when
+  // the active page changes and when the user goes idle or leaves the browser.
+  async recordActivity({ url = "", title = "", kind = "focus", ts = Date.now() }) {
+    await db.append(this.#db, "activity", { url, title, kind, ts });
+  }
+
+  // The last `minutes` of activity: { spans, summary, text }.
+  async activity({ minutes = 60, now = Date.now() } = {}) {
+    const from = now - minutes * MINUTE;
+    // An event from just before the window can still be running inside it.
+    const events = await db.since(this.#db, "activity", from - IDLE_GAP);
+    const spans = clipSpans(toSpans(events, now), from);
+    const summary = summarize(spans);
+    return { spans, summary, text: renderSummary(summary, now - from) };
+  }
+
+  // ---- Distill -----------------------------------------------------------
+
+  // complete(messages) -> reply text (see model.js). Turns recent activity into
+  // inbox entries; consolidate() files them.
+  async distill(complete, { minutes = 60, now = Date.now() } = {}) {
+    const act = await this.activity({ minutes, now });
+    const last = act.spans.at(-1);
+    if (!last) return { added: 0, rejected: [], reason: "no activity" };
+    const { prompt } = await this.contextPack({ title: last.title, url: last.url });
+    const messages = distillMessages({ activityText: act.text, contextPrompt: prompt, topics: await this.topics(), date: today() });
+    const { entries, rejected } = parseEntries(await complete(messages), { date: today() });
+    const added = [];
+    for (const e of entries) added.push(await this.add(e));
+    return { added: added.length, entries: added, rejected };
+  }
+
+  // ---- Maintenance -------------------------------------------------------
+
+  // Run on a schedule (chrome.alarms): consolidate, drop old raw activity, and
+  // export to the brain if write access is already granted (never prompts).
+  async maintain({ keepDays = 7, now = Date.now() } = {}) {
+    const consolidated = await this.consolidate();
+    await db.deleteBefore(this.#db, "activity", now - keepDays * DAY);
+    let exported;
+    try {
+      exported = await this.exportPending();
+    } catch (err) {
+      exported = { exported: 0, error: String(err) };
+    }
+    return { consolidated, exported };
+  }
+
+  // Live connection, single entry, from a user click.
   async writeToBrain(dirHandle, entry, host) {
     await writeInboxEntry(dirHandle, entry, host);
   }

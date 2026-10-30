@@ -15,11 +15,11 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 
 ## Status
 
-Working and tested: the memory pipeline (add, consolidate, recall, context pack), brain import, and the background worker writing into memory.
+Memory is complete and tested (node and real Chromium): entries, consolidation, topic-aware recall, context pack, activity log, distill, scheduled upkeep, and the brain folder connection (import, export, re-sync from the remembered folder). See [memory/README.md](memory/README.md).
 
 Not done:
-- Meta-model agent loop (required for the hackathon).
-- Tab activity capture and drift detection.
+- The agent loop: the audit call on the context pack and activity (required for the hackathon).
+- Tab capture in the extension (`memory.recordActivity` is ready for it) and the UI.
 - Agent status from claude.ai/code (`extension/content/claude-code.js` is a stub; DOM unverified).
 
 ## Brain compatibility
@@ -35,6 +35,7 @@ The demo runs on the author's own second brain, loaded locally at demo time. It 
 ```
 npm test                  # node unit tests
 npm run test:browser      # loads the extension in Chromium; needs Playwright
+npm run test:live         # real model call; needs MODEL_API_KEY in the environment
 ```
 
 Load unpacked: `chrome://extensions` → Developer mode → Load unpacked → this folder.
