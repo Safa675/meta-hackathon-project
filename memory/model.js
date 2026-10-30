@@ -31,7 +31,7 @@ export function resolveConfig({ provider = DEFAULT_PROVIDER, baseUrl, model, api
 // Returns complete(messages, opts) -> reply text.
 export function modelClient(settings, fetchImpl = globalThis.fetch) {
   const { baseUrl, model, apiKey } = resolveConfig(settings);
-  return async function complete(messages, { maxTokens = 1024, temperature = 0.2 } = {}) {
+  return async function complete(messages, { maxTokens = 4000, temperature = 0.2 } = {}) {
     const res = await fetchImpl(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(apiKey && { Authorization: `Bearer ${apiKey}` }) },

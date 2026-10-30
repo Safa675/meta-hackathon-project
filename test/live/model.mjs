@@ -14,7 +14,7 @@ const complete = modelClient({
 });
 const date = new Date().toISOString().slice(0, 10);
 
-console.log("ping:", JSON.stringify(await complete([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 64 })));
+console.log("ping:", JSON.stringify(await complete([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 512 })));
 
 const messages = distillMessages({
   activityText: [

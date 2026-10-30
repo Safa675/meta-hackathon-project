@@ -55,7 +55,7 @@ $("test").onclick = async () => {
   $("model-status").textContent = "Testing…";
   const t = performance.now();
   try {
-    const reply = await modelClient(current())([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 64 });
+    const reply = await modelClient(current())([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 512 });
     $("model-status").textContent = `Connected in ${((performance.now() - t) / 1000).toFixed(1)} s. Reply: ${reply.trim().slice(0, 60)}`;
   } catch (err) {
     $("model-status").textContent = `Failed: ${err.message}`;

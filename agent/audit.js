@@ -62,6 +62,6 @@ export async function runAudit(memory, complete, { minutes = 30, now = Date.now(
   }
   const { prompt } = await memory.contextPack({ title: current.title, url: current.url });
   const messages = auditMessages({ activityText: act.text, contextPrompt: prompt, now: new Date(now) });
-  const verdict = parseVerdict(await complete(messages, { maxTokens: 400 }));
+  const verdict = parseVerdict(await complete(messages, { maxTokens: 4000 }));
   return { ...verdict, activity: act.text, intent };
 }

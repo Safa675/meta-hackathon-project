@@ -114,7 +114,7 @@ for (const s of scenarios) {
   const t = performance.now();
   let v;
   try {
-    v = parseVerdict(await complete(auditMessages({ activityText, contextPrompt, now: new Date(now) }), { maxTokens: 400 }));
+    v = parseVerdict(await complete(auditMessages({ activityText, contextPrompt, now: new Date(now) }), { maxTokens: 4000 }));
   } catch (err) {
     v = { verdict: "error", reason: err.message, nudge: "", confidence: 0 };
   }
