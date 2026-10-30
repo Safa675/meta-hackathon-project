@@ -6,7 +6,7 @@ import { contextPack, renderPack } from "../memory/context.js";
 const entries = [
   { id: "a", kind: "decision", topic: "shop", title: "Pricing page redesign", date: "2026-10-10", context: "Old page converts badly.", result: "New layout.", evidence: "none", next: "Ship the pricing page" },
   { id: "b", kind: "fact", topic: "health", title: "Gym schedule", date: "2026-10-11", context: "Three days a week.", result: "Mon Wed Fri.", evidence: "none", next: "none" },
-  { id: "c", kind: "todo", topic: "shop", title: "Fix checkout bug", date: "2026-10-12", context: "Cart drops items.", result: "Fix checkout bug", evidence: "none", next: "Write the failing test", ts: 2 },
+  { id: "c", kind: "todo", source: "extension", topic: "shop", title: "Fix checkout bug", date: "2026-10-12", context: "Cart drops items.", result: "Fix checkout bug", evidence: "none", next: "Write the failing test", ts: 2 },
 ];
 const notes = [{ path: "notes/topics/shop.md", title: "Shop", text: "Checkout and pricing live in the shop repo. KESİNTİ notes too." }];
 const index = buildIndex([...entries.map(entryDoc), ...notes.map(noteDoc)]);

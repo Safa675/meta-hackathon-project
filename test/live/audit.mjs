@@ -106,7 +106,7 @@ for (const s of scenarios) {
   const events = s.events.map(([ago, url, title]) => ({ ts: now - ago * M, url, title, kind: "focus" }));
   const spans = toSpans(events, now);
   const activityText = renderSummary(summarize(spans), minutes * M);
-  const intent = { id: "i", kind: "todo", topic: "focus", title: s.intent, date, context: "Stated by the user.", result: s.intent, evidence: "none", next: s.next, ts: now - 70 * M };
+  const intent = { id: "i", kind: "todo", source: "extension", topic: "focus", title: s.intent, date, context: "Stated by the user.", result: s.intent, evidence: "none", next: s.next, ts: now - 70 * M };
   const index = buildIndex([entryDoc(intent)]);
   const current = spans.at(-1);
   const contextPrompt = renderPack(contextPack(index, [intent], { title: current.title, url: current.url }));

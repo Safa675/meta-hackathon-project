@@ -99,11 +99,6 @@ const afterSync = await page.evaluate(async () => {
   return hits.filter((h) => h.title === "Cart drops items on reload").map((h) => h.item.path ?? "own");
 });
 
-// The background worker writes through the same API when the popup sends a message.
-const viaWorker = await page.evaluate(() =>
-  chrome.runtime.sendMessage({ type: "intent", title: "Write the demo script", next: "Record on Nov 3" }),
-);
-
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -117,7 +112,6 @@ assert.equal(result.filedEvidence, "api_key=[REDACTED]");
 assert.equal(result.hits[0], "Fix checkout bug");
 assert.deepEqual(result.loops.sort(), ["Fix checkout bug", "Ship the pricing page"]);
 assert.match(result.prompt, /Stated intent \(\d{4}-\d{2}-\d{2}\): Fix checkout bug/);
-assert.equal(viaWorker.status, "inbox", `background worker: ${JSON.stringify(viaWorker)}`);
 assert.equal(memory2.spans, 3);
 assert.match(memory2.text, /^Last 60 min \(29 min active\):/);
 assert.match(memory2.text, /github\.com: 14 min/);

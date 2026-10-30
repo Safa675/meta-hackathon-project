@@ -1,16 +1,64 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Meta Hackathon Project</title>
+<title>Focus</title>
+<link rel="stylesheet" href="../ui.css">
 <style>
-  body { font: 14px system-ui; width: 320px; padding: 12px; }
-  input { width: 100%; box-sizing: border-box; margin: 4px 0 8px; padding: 6px; }
-  button { padding: 6px 10px; }
-  #left { margin-top: 12px; color: #444; }
+  body { width: 360px; padding: 12px; }
+  #verdict-reason { margin-top: 6px; }
+  #verdict-nudge { margin-top: 6px; font-weight: 600; }
 </style>
-<label>What are you about to do?</label>
-<input id="title" placeholder="e.g. fix the auth bug in login.ts">
-<label>Next step when you're back</label>
-<input id="next" placeholder="e.g. review the diff">
-<button id="save">Save</button>
-<div id="left"></div>
+</head>
+<body class="stack">
+  <div class="row between">
+    <h1>Focus</h1>
+    <a href="#" id="open-settings" class="small">Settings</a>
+  </div>
+
+  <p id="setup" class="card small" hidden></p>
+
+  <section class="card" id="intent-card">
+    <h2>Working on</h2>
+    <div id="intent-view" hidden>
+      <p id="intent-title"></p>
+      <p class="small muted" id="intent-next"></p>
+      <div class="row" style="margin-top:10px">
+        <button id="done">Done</button>
+        <button id="change">Change</button>
+      </div>
+    </div>
+    <form id="intent-form" class="stack">
+      <div>
+        <label for="title">What are you about to do?</label>
+        <input id="title" type="text" required minlength="3" maxlength="120" placeholder="Fix the checkout bug">
+      </div>
+      <div>
+        <label for="next">First step</label>
+        <input id="next" type="text" maxlength="200" placeholder="Write the failing test">
+      </div>
+      <button class="primary" type="submit">Start</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <h2 style="margin:0">Check-in</h2>
+      <button id="check" class="small">Check now</button>
+    </div>
+    <div id="verdict" style="margin-top:8px">
+      <span id="verdict-pill" class="pill">not checked yet</span>
+      <span id="verdict-when" class="small muted"></span>
+      <p id="verdict-reason" class="small"></p>
+      <p id="verdict-nudge"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Last 30 minutes</h2>
+    <pre class="activity" id="activity"></pre>
+  </section>
+
 <script type="module" src="popup.js"></script>
+</body>
+</html>

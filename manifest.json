@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Meta Hackathon Project",
+  "name": "Focus (Meta Hackathon Project)",
   "version": "0.0.1",
   "description": "A focus agent that knows what you meant to do and notices when you drift.",
   "permissions": [
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "idle",
+    "notifications"
   ],
   "host_permissions": [
     "https://claude.ai/code/*",
@@ -35,7 +37,18 @@
     }
   ],
   "action": {
-    "default_popup": "extension/popup/popup.html"
+    "default_popup": "extension/popup/popup.html",
+    "default_icon": {
+      "16": "extension/icons/icon-16.png",
+      "32": "extension/icons/icon-32.png",
+      "48": "extension/icons/icon-48.png"
+    }
   },
-  "options_page": "extension/options/options.html"
+  "options_page": "extension/options/options.html",
+  "icons": {
+    "16": "extension/icons/icon-16.png",
+    "32": "extension/icons/icon-32.png",
+    "48": "extension/icons/icon-48.png",
+    "128": "extension/icons/icon-128.png"
+  }
 }

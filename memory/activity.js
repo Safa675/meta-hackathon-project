@@ -59,7 +59,7 @@ export function summarize(spans) {
   return { totalMs: sites.reduce((a, s) => a + s.ms, 0), sites };
 }
 
-const mins = (ms) => `${Math.round(ms / 60000)} min`;
+const mins = (ms) => (ms < 30000 ? "<1 min" : `${Math.round(ms / 60000)} min`);
 
 export function renderSummary(summary, windowMs, { sites = 6, titles = 2 } = {}) {
   if (!summary.sites.length) return `Last ${mins(windowMs)}: no browser activity.`;

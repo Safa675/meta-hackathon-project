@@ -64,6 +64,19 @@ export class Memory {
     return this.importBrain(dirHandle);
   }
 
+  // Cheap status check, no file reads: { connected, permission }.
+  async brainState() {
+    const dir = await db.getMeta(this.#db, "brain");
+    if (!dir) return { connected: false };
+    return { connected: true, name: dir.name, permission: await permission(dir, "read") };
+  }
+
+  async stats() {
+    await this.#load();
+    const notes = await db.getAll(this.#db, "notes");
+    return { entries: this.#entries.length, notes: notes.length, openLoops: openLoops(this.#entries).length };
+  }
+
   // Re-import the remembered folder. prompt: true only from a user click.
   async syncBrain({ prompt = false } = {}) {
     const dir = await db.getMeta(this.#db, "brain");
@@ -125,6 +138,27 @@ export class Memory {
   async latestIntent() {
     await this.#load();
     return latestIntent(this.#entries);
+  }
+
+  // Set what the user is about to do. It becomes the stated intent the audit checks.
+  async setIntent({ title, next }) {
+    return this.add({ kind: "todo", topic: "focus", title, context: "Stated by the user.", result: title, next });
+  }
+
+  // Mark an intent done: it stops being the stated intent, and an event records it.
+  async completeIntent(id) {
+    await this.#load();
+    const todo = this.#entries.find((e) => e.id === id);
+    if (!todo) throw new Error(`no entry ${id}`);
+    await db.putAll(this.#db, "entries", [{ ...todo, done: true }]);
+    this.#dirty();
+    return this.add({
+      kind: "event",
+      topic: todo.topic,
+      title: `Done: ${todo.title}`.slice(0, 120),
+      context: `Intent stated on ${todo.date}.`,
+      result: "Marked done by the user.",
+    });
   }
 
   async topics() {

@@ -5,9 +5,11 @@ import { topicSearch, hostWords } from "./recall.js";
 
 const isOpenLoop = (doc) => doc.ref.type === "entry" && doc.item.next && doc.item.next !== "none";
 
+// The user's stated intent: the newest todo they set in the extension and have
+// not marked done. Brain todos and distilled todos are open loops, not intents.
 export function latestIntent(entries) {
   return entries
-    .filter((e) => e.kind === "todo")
+    .filter((e) => e.kind === "todo" && e.source === "extension" && !e.done)
     .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0) || b.date.localeCompare(a.date))[0];
 }
 
