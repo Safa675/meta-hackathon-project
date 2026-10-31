@@ -11,6 +11,7 @@ import { makeIntent, isExpired } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance } from "../agent/relevance.js";
+import { contextFlags } from "./sensor.js";
 
 const memory = Memory.open();
 const store = openStore();
@@ -40,6 +41,27 @@ async function config() {
 }
 
 const loadEngine = async () => (await chrome.storage.session.get("engine")).engine ?? initialState();
+
+// Session storage is wiped when Chrome restarts or the extension reloads, but the
+// goal (IndexedDB) and the mode (local storage) survive: give them back to the engine.
+// Runs inside the queue.
+async function engineState(cfg, ts) {
+  const { engine } = await chrome.storage.session.get("engine");
+  if (engine) return engine;
+  let s = initialState();
+  const { mode } = await chrome.storage.local.get("mode");
+  if (mode && mode !== "focus")
+    s = (await apply(s, { type: "session", ts, kind: "mode", payload: { mode } }, cfg)).state;
+  const st = await store;
+  const intent = await st.activeIntent();
+  if (intent && isExpired(intent, ts, ts, cfg)) await st.putIntent({ ...intent, expiredAt: ts });
+  else if (intent) {
+    const payload = { id: intent.id, title: intent.title, topic: intent.topic, restored: true };
+    s = (await apply(s, { type: "session", ts, kind: "intent_set", payload }, cfg)).state;
+  }
+  await saveEngine(s);
+  return s;
+}
 const saveEngine = (engine) => chrome.storage.session.set({ engine });
 const log = async (record) => (await store).appendEvent(record);
 
@@ -48,7 +70,7 @@ const log = async (record) => (await store).appendEvent(record);
 // Runs inside the queue. Returns the new engine state.
 async function process(input) {
   const cfg = await config();
-  let s = await loadEngine();
+  let s = await engineState(cfg, input.ts);
   if (s.mode === "off" && input.type !== "session" && input.type !== "response") return s;
 
   // A goal left over from yesterday (or hours ago) becomes an open loop.
@@ -66,7 +88,7 @@ async function process(input) {
 async function apply(s, input, cfg) {
   const r = step(s, input, cfg);
   await saveEngine(r.state);
-  if (input.type !== "tick") await log(input);
+  await log(input); // ticks too: replay tells sleep from a long stay by them
   for (const o of r.out) {
     if (o.type === "need_relevance") askRelevance(o);
     else {
@@ -102,37 +124,47 @@ async function activeTab() {
   return tab;
 }
 
-// One context input for the page in front, with its label if already known.
-function feedTab(tab, { browserFocused = true, idleState = "active" } = {}) {
-  if (!tab) return;
+// Each Chrome event is queued the moment it arrives; the Chrome lookups happen
+// inside the job, so the engine sees events in arrival order.
+// getTab: () => Promise<Tab>. opts: {idleState?, forceUnfocused?}.
+const sense = (getTab, opts = {}) => enqueue(() => contextJob(getTab, opts));
+
+async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
+  const tab = await getTab().catch(() => null);
+  if (!tab || tab.url === "about:blank") return; // transient, not a page the user chose
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  const flags = contextFlags(tab, {
+    focusedWindowId: win?.focused ? win.id : -1,
+    idleState: idleState ?? (await chrome.idle.queryState(IDLE_AFTER_SEC)),
+    forceUnfocused,
+  });
+  if (!flags) return; // not the page in front
   let url = tab.url ?? "";
   let title = tab.title ?? "";
-  if (url === "about:blank") return; // transient, not a page the user chose
   // Time in this extension's own pages (settings) is neither work nor drift, and stays out of the log.
   if (url.startsWith(OWN_PAGES)) {
     url = "";
     title = "";
     record({ kind: "idle" });
-  } else if (browserFocused && idleState === "active") {
+  } else if (flags.browserFocused && flags.idleState === "active") {
     record({ url, title });
+  } else if (!tab.audible) {
+    record({ kind: "idle" });
   }
-  return enqueue(async () => {
-    const s = await loadEngine();
-    const ts = Date.now();
-    const input = {
-      type: "context",
-      ts,
-      tabId: tab.id,
-      url,
-      host: hostOf(url),
-      title,
-      key: relevanceKey(s.intent?.id ?? "none", url, title),
-      audible: !!tab.audible,
-      browserFocused,
-      idleState,
-      ...(await knownLabel(s.intent, url, title)),
-    };
-    return process(input);
+  const ts = Date.now();
+  const cfg = await config();
+  const s = await engineState(cfg, ts);
+  return process({
+    type: "context",
+    ts,
+    tabId: tab.id,
+    url,
+    host: hostOf(url),
+    title,
+    key: relevanceKey(s.intent?.id ?? "none", url, title),
+    audible: !!tab.audible,
+    ...flags,
+    ...(await knownLabel(s.intent, url, title)),
   });
 }
 
@@ -149,37 +181,31 @@ async function knownLabel(intent, url, title) {
   return cached ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
 }
 
-async function feedActive(opts) {
-  const tab = await activeTab();
-  if (!tab) return;
-  const win = await chrome.windows.get(tab.windowId);
-  return feedTab(tab, { browserFocused: win.focused, ...opts });
-}
+chrome.tabs.onActivated.addListener(({ tabId }) => sense(() => chrome.tabs.get(tabId)));
 
-chrome.tabs.onActivated.addListener(({ tabId }) => chrome.tabs.get(tabId).then((t) => feedTab(t)));
-
-// A URL change arrives before the page has its title, and a later title change is
-// not always reported, so also feed when loading completes. Same-page repeats are
-// one page to the engine.
+// A bare URL change carries the previous page's title, so wait for the new title
+// or for loading to complete. Same-page repeats are one page to the engine.
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
-  if (tab.active && (change.url || change.title || change.status === "complete")) feedTab(tab);
+  if (tab.active && (change.title || change.status === "complete")) sense(async () => tab);
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    record({ kind: "idle" });
-    activeTab().then((t) => feedTab(t, { browserFocused: false }));
-  } else feedActive();
+  if (windowId === chrome.windows.WINDOW_ID_NONE) sense(activeTab, { forceUnfocused: true });
+  else sense(activeTab);
 });
 
-chrome.idle.onStateChanged.addListener(async (state) => {
-  if (state !== "active" && !(await activeTab())?.audible) record({ kind: "idle" });
-  feedActive({ idleState: state });
-});
+chrome.idle.onStateChanged.addListener((state) => sense(activeTab, { idleState: state }));
 
 // ---- Relevance (LLM#1) ---------------------------------------------------
 
-async function askRelevance(need) {
+function askRelevance(need) {
+  // Outside the queue; a failure leaves the page neutral and the engine asks again later.
+  judge(need).catch((err) =>
+    log({ type: "llm", ts: Date.now(), node: "classifyRelevance", ok: false, error: String(err) }),
+  );
+}
+
+async function judge(need) {
   const s = await loadEngine();
   if (!s.intent) return;
   const settings = await loadModelSettings();
@@ -243,7 +269,7 @@ async function respond({ choice }) {
   return enqueue(async () => {
     const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
     const ts = Date.now();
-    const before = await loadEngine();
+    const before = await engineState(await config(), ts);
     const page = lastTrigger?.evidence; // the page the nudge was about
     const s = await process({
       type: "response",
@@ -294,6 +320,9 @@ async function markRelated(page, intent, ts) {
 
 async function setIntent({ title, next }) {
   return enqueue(async () => {
+    const st = await store;
+    const previous = await st.activeIntent();
+    if (previous) await st.putIntent({ ...previous, doneAt: Date.now(), replaced: true });
     const entry = await (await memory).setIntent({ title, next: next || undefined });
     const intent = makeIntent({ title, steps: next ? [next] : [], memoryEntryId: entry.id }, Date.now());
     await (await store).putIntent(intent);
@@ -320,12 +349,17 @@ async function completeIntent() {
 }
 
 const setMode = ({ mode }) =>
-  enqueue(() => process({ type: "session", ts: Date.now(), kind: "mode", payload: { mode } }));
+  enqueue(async () => {
+    await chrome.storage.local.set({ mode });
+    return process({ type: "session", ts: Date.now(), kind: "mode", payload: { mode } });
+  });
 
-async function status() {
-  const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
-  return { engine: await loadEngine(), lastTrigger: lastTrigger ?? null, intent: await (await store).activeIntent() };
-}
+const status = () =>
+  enqueue(async () => {
+    const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
+    const engine = await engineState(await config(), Date.now());
+    return { engine, lastTrigger: lastTrigger ?? null, intent: await (await store).activeIntent() };
+  });
 
 // ---- Distill and upkeep --------------------------------------------------
 
@@ -356,7 +390,7 @@ const HANDLERS = {
   "get-status": status,
   "export-log": async () => (await store).exportLog(),
   "import-log": async ({ log }) => (await store).importLog(log),
-  "record-active": () => feedActive(),
+  "record-active": () => sense(activeTab),
   maintain,
   "sync-brain": () => memory.then((m) => m.syncBrain()),
 };

@@ -120,13 +120,24 @@ await repoTab.close();
 await clickOnCard("#take-me-back");
 const reopened = await activeUrl();
 
+// Review C1: Chrome restarts (session storage is wiped); the goal must still be watched.
+await popup.evaluate(() => chrome.storage.session.clear());
+await videoTab.bringToFront();
+const drift4 = await waitForNewDrift(drift2.id);
+await clickOnCard("#take-me-back");
+
 // "This is for my task" on the video: the next visit stays quiet.
 await videoTab.bringToFront();
-const drift3 = await waitForNewDrift(drift2.id);
+const drift3 = await waitForNewDrift(drift4.id);
 await clickOnCard("#for-my-task");
 await videoTab.bringToFront();
 await videoTab.waitForTimeout(6000);
 const afterLabel = await lastTrigger();
+
+// Review I1: changing the goal closes the old one; Done leaves no goal behind.
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+const afterDone = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
 
 // The exported event log.
 await settingsPage.bringToFront();
@@ -145,6 +156,8 @@ fs.rmSync(profile, { recursive: true, force: true });
 assert.deepEqual(errors, []);
 assert.equal(intentShown, "Fix the checkout bug");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
+const videoCalls = calls.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
+assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
 assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
 assert.match(cardText, /localhost/);
 assert.match(cardText, /Fix the checkout bug/);
@@ -152,6 +165,8 @@ assert.equal(backTo, repo);
 assert.equal(reopened, repo);
 assert.equal(afterLabel.id, drift3.id, "no new trigger on a page marked as work");
 assert.equal(afterLabel.choice, "related");
+assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
+assert.equal(afterDone.intent, null, "no stale goal after change + done");
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");
