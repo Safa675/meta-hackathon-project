@@ -70,14 +70,25 @@ await settingsPage.evaluate(async (baseUrl) => {
   });
 }, `http://127.0.0.1:${port}/v1`);
 
-// Popup (opened as a tab): set the goal.
+// Getting started on the page: the settings page took the day's first look (Tuck
+// cannot appear there), so Tuck greets on the first normal page and asks for the goal.
+const repoTab = await ctx.newPage();
+await repoTab.goto(repo);
+const tuck = repoTab.locator("#tuck-companion");
+await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+const greeting = await tuck.locator(".bubble .text").textContent();
+const greetState = await tuck.locator("svg.tuck").getAttribute("data-state");
+if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
+await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
+await tuck.locator("input[name=step]").fill("Write the failing test");
+await tuck.locator("button.start").click();
+await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
+await repoTab.waitForTimeout(1500);
+
+// The popup (opened as a tab) shows the goal set on the page.
 const popup = await ctx.newPage();
 watch(popup);
 await popup.goto(`${ext}/extension/popup/popup.html`);
-await popup.waitForSelector("#intent-form:not([hidden])");
-await popup.fill("#title", "Fix the checkout bug");
-await popup.fill("#next", "Write the failing test");
-await popup.click("#intent-form button[type=submit]");
 await popup.waitForSelector("#intent-view:not([hidden])");
 const intentShown = await popup.textContent("#intent-title");
 
@@ -104,15 +115,22 @@ async function clickOnCard(button) {
 }
 
 // Browse: the repo, then the video. The model judges each page once.
-const repoTab = await ctx.newPage();
-await repoTab.goto(repo);
+await repoTab.bringToFront();
 await repoTab.waitForTimeout(1500);
 const videoTab = await ctx.newPage();
 await videoTab.goto(video);
 await videoTab.bringToFront();
 const drift1 = await waitForNewDrift(null);
 const badge = await popup.evaluate(() => chrome.action.getBadgeText({}));
-const cardText = await clickOnCard("#take-me-back");
+// Tuck on the video: welcome hop first (L1), then thinking with the bubble (L2).
+const onVideo = videoTab.locator("#tuck-companion");
+const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state", { timeout: 5000 });
+await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 10000 });
+const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const cardText = await onVideo.locator(".bubble .text").textContent();
+if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") });
+await onVideo.locator(".bubble button[data-choice=back]").click();
+await popup.waitForTimeout(800);
 if (shots) await popup.screenshot({ path: path.join(shots, "popup-trigger.png"), fullPage: true });
 const backTo = await activeUrl();
 
@@ -170,7 +188,11 @@ server.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
+assert.equal(greeting, "Hi! What are we working on today?");
+assert.equal(greetState, "checkin");
 assert.equal(intentShown, "Fix the checkout bug");
+assert.ok(["welcome", "resting"].includes(firstState), `L1 state: ${firstState}`);
+assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const videoCalls = calls.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
 assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
