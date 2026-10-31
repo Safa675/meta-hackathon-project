@@ -6,7 +6,8 @@ const evidence = {
   url: "https://www.youtube.com/watch?v=a",
   host: "youtube.com",
   title: "Top 10 F1 crashes",
-  dwellSec: 52,
+  dwellSec: 0,
+  awaySec: 52,
   lastRelevant: { url: "https://github.com/acme/shop", title: "cart.js · acme/shop" },
 };
 const trigger = (kind, level) => ({
@@ -16,13 +17,14 @@ const trigger = (kind, level) => ({
   level,
   evidence,
   intentTitle: "Fix the bug",
+  intentStep: "Write the failing test",
 });
 
 test("L1 drift speaks right away: a check-in wave with the message and the answers", () => {
   const v = present({ trigger: trigger("drift", 1) });
   assert.equal(v.tuck, "checkin");
   assert.equal(v.bubble.kind, "nudge");
-  assert.equal(v.bubble.text, "You've been on youtube.com for 52 s — back to Fix the bug?");
+  assert.equal(v.bubble.text, "Still on YouTube? Next up: write the failing test.");
   assert.deepEqual(
     v.bubble.buttons.map((b) => b.choice),
     ["back", "related", "break"],
@@ -33,7 +35,7 @@ test("L1 drift speaks right away: a check-in wave with the message and the answe
 test("on a page the model is unsure about, L1 asks instead", () => {
   const unsure = { ...trigger("drift", 1), evidence: { ...evidence, unsure: true } };
   const v = present({ trigger: unsure });
-  assert.equal(v.bubble.text, "Is youtube.com part of Fix the bug?");
+  assert.equal(v.bubble.text, "Is this page part of your task?");
   assert.deepEqual(
     v.bubble.buttons.map((b) => [b.choice, b.label]),
     [
@@ -48,7 +50,7 @@ test("L2 and L3 drift: thinking, with the message and the three answers", () => 
     const v = present({ trigger: trigger("drift", level) });
     assert.equal(v.tuck, "thinking");
     assert.equal(v.bubble.kind, "nudge");
-    assert.equal(v.bubble.text, "You've been on youtube.com for 52 s — back to Fix the bug?");
+    assert.equal(v.bubble.text, "Still on YouTube. Want to get back to it?");
     assert.deepEqual(
       v.bubble.buttons.map((b) => b.choice),
       ["back", "related", "break"],
@@ -60,20 +62,20 @@ test("L2 and L3 drift: thinking, with the message and the three answers", () => 
 test("fragmentation at L2 is a nudge too", () => {
   const v = present({ trigger: trigger("fragmentation", 2) });
   assert.equal(v.tuck, "thinking");
-  assert.equal(v.bubble.text, "Lots of tab hopping — want to pick one thing?");
+  assert.equal(v.bubble.text, "Lots of tab switching. Want to pick one thing?");
 });
 
 test("return and break_over: a check-in wave with a nudge", () => {
   const r = present({ trigger: trigger("return", 2) });
   assert.equal(r.tuck, "checkin");
-  assert.equal(r.bubble.text, "Welcome back. You were on cart.js · acme/shop.");
+  assert.equal(r.bubble.text, "Welcome back. Next up: write the failing test.");
   assert.deepEqual(
     r.bubble.buttons.map((b) => b.choice),
     ["back"],
   );
   const b = present({ trigger: trigger("break_over", 2) });
   assert.equal(b.tuck, "checkin");
-  assert.equal(b.bubble.text, "Break's over — ready for Fix the bug?");
+  assert.equal(b.bubble.text, "Break's over. Ready to get back to it?");
 });
 
 test("session_start: check-in with the goal form and up to two things to pick up", () => {
@@ -83,7 +85,7 @@ test("session_start: check-in with the goal form and up to two things to pick up
   });
   assert.equal(v.tuck, "checkin");
   assert.equal(v.bubble.kind, "goal");
-  assert.equal(v.bubble.text, "Hi! What are we working on today?");
+  assert.equal(v.bubble.text, "Hi. What are we working on today?");
   assert.deepEqual(v.bubble.pickUp, ["Edit the demo video", "Write the README"]);
 });
 
@@ -91,14 +93,14 @@ test("after Done: what's next, with the goal form", () => {
   const v = present({ event: "goal_done" });
   assert.equal(v.tuck, "checkin");
   assert.equal(v.bubble.kind, "goal");
-  assert.equal(v.bubble.text, "Nice! What's next?");
+  assert.equal(v.bubble.text, "Nice work. What's next?");
 });
 
 test("goal set and nudge resolved: a welcome hop, then Tuck rests on the page", () => {
   assert.deepEqual(present({ event: "goal_set" }), {
     tuck: "welcome",
     settle: "resting",
-    bubble: { kind: "note", text: "Got it — let's go." },
+    bubble: { kind: "note", text: "Got it. Let's go." },
     closeBubbleAfterMs: 2000,
   });
   assert.deepEqual(present({ event: "resolved" }), { tuck: "welcome", settle: "resting", bubble: null });
@@ -124,7 +126,13 @@ test("level 0 (do not disturb) and session_start without loops", () => {
   assert.deepEqual(present({ trigger: trigger("session_start", 2) }).bubble.pickUp, []);
 });
 
-test("nudgeText keeps the popup and Tuck saying the same thing", () => {
-  assert.equal(nudgeText(trigger("drift", 1)), "You've been on youtube.com for 52 s — back to Fix the bug?");
-  assert.equal(nudgeText({ ...trigger("drift", 1), evidence: { ...evidence, dwellSec: 150 } }).includes("3 min"), true);
+test("the model's line is used when it is ready", () => {
+  const v = present({ trigger: { ...trigger("drift", 2), message: "That's 5 minutes on YouTube. Back to the test?" } });
+  assert.equal(v.bubble.text, "That's 5 minutes on YouTube. Back to the test?");
+  assert.equal(nudgeText({ ...trigger("drift", 1), message: "Back to the test?" }), "Back to the test?");
+});
+
+test("minutes away come from awaySec, never seconds", () => {
+  const long = { ...trigger("drift", 2), evidence: { ...evidence, awaySec: 330 } };
+  assert.equal(nudgeText(long), "That's 6 minutes on YouTube. Next up: write the failing test.");
 });

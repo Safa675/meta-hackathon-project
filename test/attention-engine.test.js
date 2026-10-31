@@ -323,3 +323,15 @@ test("the trigger says whether the page is unsure", () => {
   const sure = run([setIntent(t0), ctx(t0, VIDEO, "unrelated")], { until: t0 + 50 * S });
   assert.equal(sure.triggers.find((t) => t.kind === "drift").evidence.unsure, false);
 });
+
+test("evidence counts time away from work, not time on this page", () => {
+  const X = ["https://x.com/home", "Home / X"];
+  const { triggers } = run(
+    [setIntent(t0), ctx(t0, REPO, "related"), ctx(t0 + 10 * S, VIDEO, "unrelated"), ctx(t0 + 40 * S, X, "unrelated")],
+    { until: t0 + 60 * S },
+  );
+  const drift = triggers.find((t) => t.kind === "drift");
+  assert.equal(drift.ts, t0 + 55 * S);
+  assert.equal(drift.evidence.awaySec, 45);
+  assert.equal(drift.evidence.host, "x.com");
+});

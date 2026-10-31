@@ -1,8 +1,7 @@
 // What Tuck shows for an engine trigger or a goal event: its state and its bubble.
 // Pure; background.js sends the result to the page (overlay.js draws it) and the
 // popup shares the same words. Design §12.
-
-const duration = (sec) => (sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`);
+import { siteName, templateNudge } from "./voice.js";
 
 const ANSWERS = {
   back: { choice: "back", label: "Take me back", primary: true },
@@ -10,24 +9,18 @@ const ANSWERS = {
   break: { choice: "break", label: "5-min break" },
 };
 
-// Template words until the agent writes them (LLM#4, plan 2).
+// The model's line when it is ready (agent/nudge.js), else the template in Tuck's voice.
 export function nudgeText(t) {
-  const goal = t.intentTitle ?? "your goal";
+  if (t.message) return t.message;
   const e = t.evidence ?? {};
-  switch (t.kind) {
-    case "drift":
-      return `You've been on ${e.host} for ${duration(e.dwellSec ?? 0)} — back to ${goal}?`;
-    case "fragmentation":
-      return "Lots of tab hopping — want to pick one thing?";
-    case "return":
-      return `Welcome back. You were on ${e.lastRelevant?.title ?? goal}.`;
-    case "break_over":
-      return `Break's over — ready for ${goal}?`;
-    case "session_start":
-      return "Hi! What are we working on today?";
-    default:
-      return "";
-  }
+  return templateNudge({
+    kind: t.kind,
+    level: t.level,
+    site: siteName(e.host),
+    awayMin: Math.round((e.awaySec ?? 0) / 60),
+    unsure: !!e.unsure,
+    task: { title: t.intentTitle, step: t.intentStep },
+  });
 }
 
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
@@ -61,7 +54,7 @@ export function present({ trigger, loops = [], event, intent }) {
       const bubble = e.unsure
         ? {
             kind: "nudge",
-            text: `Is ${e.host} part of ${trigger.intentTitle ?? "your goal"}?`,
+            text: nudgeText(trigger),
             buttons: [
               { choice: "related", label: "Yes, it's for my task", primary: true },
               { choice: "back", label: "No, take me back" },
@@ -92,11 +85,11 @@ export function present({ trigger, loops = [], event, intent }) {
       return {
         tuck: "welcome",
         settle: "resting",
-        bubble: { kind: "note", text: "Got it — let's go." },
+        bubble: { kind: "note", text: "Got it. Let's go." },
         closeBubbleAfterMs: 2000,
       };
     case "goal_done":
-      return { tuck: "checkin", bubble: goalForm("Nice! What's next?") };
+      return { tuck: "checkin", bubble: goalForm("Nice work. What's next?") };
     case "resolved":
       return { tuck: "welcome", settle: "resting", bubble: null };
     case "presence":

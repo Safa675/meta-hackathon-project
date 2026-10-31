@@ -5,12 +5,14 @@
 import { Memory } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
-import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable } from "../attention/relevance.js";
+import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable, isUnsure } from "../attention/relevance.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance } from "../agent/relevance.js";
+import { composeNudge } from "../agent/nudge.js";
+import { siteName } from "./overlay/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { present } from "./overlay/present.js";
 
@@ -107,6 +109,10 @@ async function apply(s, input, cfg) {
     else {
       await log(o);
       if (o.type === "trigger") await showTrigger(o, r.state);
+      // Tuck's words take the model a few seconds: start writing them before they are needed.
+      if (o.type === "state" && o.to === "detour") draftNudge(r.state, 1, cfg);
+      if (o.type === "trigger" && o.kind === "drift" && o.level >= 1 && !o.suppressedBy)
+        draftNudge(r.state, o.level + 1, cfg);
       if (o.type === "state" && ["focused", "no_intent", "paused"].includes(o.to)) await setBadge(null);
       // Back on a work page before answering (a new tab or a search is not back yet).
       const backAtWork = o.type === "state" && o.to === "focused" && r.state.current?.label === "related";
@@ -282,11 +288,69 @@ async function setBadge(kind) {
 // Level 0 (do not disturb) is logged only; everything else is shown.
 async function showTrigger(t, s) {
   if (t.level < 1) return;
-  const shown = { ...t, intentTitle: s.intent?.title ?? null };
+  const intent = await (await store).activeIntent();
+  const shown = {
+    ...t,
+    intentTitle: s.intent?.title ?? null,
+    intentStep: intent?.steps?.[0] ?? null,
+    message: await draftFor(t, s),
+  };
   await chrome.storage.local.set({ lastTrigger: shown });
   await setBadge(t.level >= 2 ? "loud" : "look");
   if (t.kind === "session_start") return greet(s.current?.tabId);
   await showTuck(s.current?.tabId, present({ trigger: shown }));
+}
+
+// ---- Tuck's words (LLM#4) ------------------------------------------------
+
+// Writes the line for the nudge at `level` on the page in front, ahead of time.
+// Outside the queue; a failure leaves the template.
+function draftNudge(s, level, cfg) {
+  writeDraft(s, level, cfg).catch((err) =>
+    log({ type: "llm", ts: Date.now(), node: "composeNudge", ok: false, error: String(err) }),
+  );
+}
+
+async function writeDraft(s, level, cfg) {
+  if (!s.intent || !s.current || level > 3) return;
+  const settings = await loadModelSettings();
+  if (!settings) return;
+  const intent = await (await store).activeIntent();
+  const unsure = isUnsure(s.current, cfg);
+  // Minutes away when that nudge comes: the tolerance, plus one escalation per level after the first.
+  const awayMs =
+    (s.offTaskSince ? Date.now() - s.offTaskSince : 0) +
+    (level === 1 ? cfg.toleranceSec * 1000 : cfg.escalateAfterSec * 1000);
+  const r = await composeNudge(modelClient(settings), {
+    kind: "drift",
+    level,
+    site: siteName(s.current.host),
+    awayMin: Math.round(awayMs / 60000),
+    unsure,
+    task: { title: intent?.title ?? s.intent.title, step: intent?.steps?.[0] },
+    lastWork: s.lastRelevant?.title,
+    hour: new Date().getHours(),
+  });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "composeNudge",
+    model: settings.model ?? settings.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: r.source === "llm",
+    ...(r.error && { error: r.error }),
+    ...(r.message && { message: r.message }),
+  });
+  if (r.message)
+    await chrome.storage.session.set({ nudgeDraft: { key: s.current.key, level, unsure, message: r.message } });
+}
+
+// The drafted line, if it was written for this very nudge.
+async function draftFor(t, s) {
+  if (t.kind !== "drift") return null;
+  const { nudgeDraft: d } = await chrome.storage.session.get("nudgeDraft");
+  const unsure = !!t.evidence?.unsure;
+  return d && d.key === s.current?.key && d.level === t.level && d.unsure === unsure ? d.message : null;
 }
 
 // ---- Tuck on the page ----------------------------------------------------

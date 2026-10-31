@@ -17,6 +17,7 @@ const shots = process.env.SCREENSHOT_DIR;
 // Two "sites" (different hostnames for the same server) and a fake model that
 // calls the video unrelated and everything else related.
 const calls = [];
+const nudgeCalls = [];
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -30,11 +31,17 @@ const server = http.createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     const { messages } = JSON.parse(body);
+    res.setHeader("Content-Type", "application/json");
+    // Tuck's words (agent/nudge.js).
+    if (/You are Tuck/.test(messages[0].content)) {
+      nudgeCalls.push(messages);
+      const message = "Still on the video? Back to the failing test.";
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
+    }
     calls.push(messages);
     const reply = /Top 10 F1 crashes/.test(messages.at(-1).content)
       ? { label: "unrelated", confidence: 0.9, reason: "An F1 video, not the checkout bug." }
       : { label: "related", confidence: 0.9, reason: "The shop repo." };
-    res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
   });
 });
@@ -211,7 +218,7 @@ server.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
-assert.equal(greeting, "Hi! What are we working on today?");
+assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "checkin");
 assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
 assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
@@ -222,14 +229,16 @@ assert.ok(videoAvatar.x < 100, `Tuck remembers where it was put: ${videoAvatar.x
 assert.equal(intentShown, "Fix the checkout bug");
 assert.equal(drift1.level, 1);
 assert.equal(firstState, "checkin", "the first detection is a visible wave");
-assert.match(firstText, /You've been on localhost/, "the first detection already says something");
+assert.equal(firstText, "Still on the video? Back to the failing test.", "Tuck says the model's line");
+assert.ok(nudgeCalls.length >= 1);
+assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
+assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
 assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const videoCalls = calls.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
 assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
 assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
-assert.match(cardText, /localhost/);
-assert.match(cardText, /Fix the checkout bug/);
+assert.equal(cardText, "Still on the video? Back to the failing test.", "L2 uses the drafted line too");
 assert.equal(backTo, repo);
 assert.equal(reopened, repo);
 assert.equal(afterLabel.id, drift3.id, "no new trigger on a page marked as work");
