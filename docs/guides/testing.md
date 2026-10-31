@@ -60,11 +60,13 @@ agent never runs it on its own initiative.
 ## Not checked yet
 
 - **Relevance accuracy (LLM#1)** — the eval exists (`npm run eval`) but has no accepted baseline yet: the case labels await İrem's review and the first real run.
-- **No unfair warnings / drift is caught** — need the replay tests and a recorded
-  log in `test/fixtures/`, built in the plan.
+- **No unfair warnings / drift is caught** — `test/attention-criteria.test.js` checks
+  both on every `test/fixtures/<name>.log.json` + `<name>.labels.json`, but no real
+  session is recorded yet, so it runs no cases today.
 - **Intervention speed** — threshold open in `INTENT.md`; an e2e timing test
   comes once the threshold is set.
-- **Demo flow works** — `test:e2e` still tests the old audit flow; it is
-  rewritten for the new flow in the plan.
+- **Demo flow works** — `test:e2e` covers the engine flow (goal → drift → nudge →
+  Take me back → This is for my task → log); the full demo script needs plan 2's
+  overlay and side panel.
 - **It actually helps** — threshold open; computed from the user's own event
   log, not a test.
