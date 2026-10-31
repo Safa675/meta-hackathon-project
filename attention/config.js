@@ -12,6 +12,7 @@ export const DEFAULTS = Object.freeze({
   cooldownSec: 120,
   gentleMultiplier: 2,
   returnAwaySec: 300,
+  idleAfterSec: 120, // no keyboard or mouse this long (system-wide) = away
   maxGapSec: 120, // a longer silence between inputs is time away (sleep, crash)
   breakMin: 5,
   relevanceRetrySec: 30, // ask the model again if an answer never came (worker died mid-call)

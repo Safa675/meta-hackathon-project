@@ -286,3 +286,32 @@ test("review I6: turning Off back on is not a return from away", () => {
   r = step(r.state, ctx(t0 + 601 * S, REPO, "related"), CFG);
   assert.equal(r.out.filter((o) => o.type === "trigger").length, 0);
 });
+
+test("minor 1: This is for my task relabels the nudged page, not the page in front", () => {
+  const X = ["https://x.com/home", "Home / X"];
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, REPO, "related"), CFG);
+  r = step(r.state, ctx(t0 + 10 * S, X, "unrelated"), CFG); // the user moved on
+  r = step(r.state, { type: "response", ts: t0 + 11 * S, choice: "related", pageUrl: VIDEO[0] }, CFG);
+  assert.equal(r.state.current.label, "unrelated");
+  assert.equal(r.state.lastRelevant.url, REPO[0]);
+});
+
+test("minor 2: heartbeat ticks while away do not count as activity", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, REPO, "related"), CFG);
+  r = step(r.state, ctx(t0 + S, REPO, "related", { idleState: "locked" }), CFG);
+  for (let ts = t0 + 31 * S; ts < t0 + 3600 * S; ts += 30 * S) r = step(r.state, tick(ts), CFG);
+  assert.equal(r.state.lastActiveTs, t0);
+});
+
+test("minor 7: break_over stays quiet when the user is already back at work", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    { type: "response", ts: t0 + 10 * S, triggerId: "x", choice: "break" },
+    ctx(t0 + 200 * S, REPO, "related"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 10 * S + 5 * 60 * S });
+  assert.deepEqual(triggers, []);
+});

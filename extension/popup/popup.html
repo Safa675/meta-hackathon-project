@@ -7,6 +7,13 @@
 <style>
   body { width: 360px; padding: 12px; }
   #trigger-text { font-weight: 600; }
+  #mode { width: auto; }
+  .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+  .site-name { font-weight: 600; }
+  .site-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .bar { height: 4px; border-radius: 2px; margin-top: 4px; background: var(--border);
+         background-image: linear-gradient(var(--accent), var(--accent));
+         background-size: calc(var(--share) * 100%) 100%; background-repeat: no-repeat; }
 </style>
 </head>
 <body class="stack">
@@ -63,7 +70,8 @@
 
   <section class="card">
     <h2>Last 30 minutes</h2>
-    <pre class="activity" id="activity"></pre>
+    <ul class="sites" id="activity"></ul>
+    <p class="small muted" id="activity-empty">Nothing yet. Your sites show up here as you browse.</p>
   </section>
 
 <script type="module" src="popup.js"></script>

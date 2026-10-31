@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULTS, withOverrides } from "../attention/config.js";
-import { hostOf, normalizeTitle, relevanceKey, labelKeys, builtinLabel, isUnsure } from "../attention/relevance.js";
+import {
+  hostOf,
+  normalizeTitle,
+  relevanceKey,
+  labelKeys,
+  builtinLabel,
+  isUnsure,
+  cacheUsable,
+} from "../attention/relevance.js";
 
 test("normalizeTitle drops notification counters, extra spaces and case", () => {
   assert.equal(normalizeTitle("(3) Inbox  - Gmail "), "inbox - gmail");
@@ -54,4 +62,12 @@ test("withOverrides merges known keys only", () => {
   assert.equal(cfg.decayRate, DEFAULTS.decayRate);
   assert.equal("bogus" in cfg, false);
   assert.equal(withOverrides().toleranceSec, 45);
+});
+
+test("minor 8: a fallback answer is cached briefly, a model answer for good", () => {
+  const now = Date.UTC(2026, 9, 31, 10, 0);
+  assert.equal(cacheUsable({ source: "llm", ts: now - 86400000 }, now), true);
+  assert.equal(cacheUsable({ source: "fallback", ts: now - 60 * 1000 }, now), true);
+  assert.equal(cacheUsable({ source: "fallback", ts: now - 3 * 60 * 1000 }, now), false);
+  assert.equal(cacheUsable(undefined, now), false);
 });

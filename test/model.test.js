@@ -2,15 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { modelClient, resolveConfig, PROVIDERS } from "../memory/model.js";
 
-const fakeFetch = (status, body, seen = []) => async (url, init) => {
-  seen.push({ url, init });
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-    text: async () => JSON.stringify(body),
+const fakeFetch =
+  (status, body, seen = []) =>
+  async (url, init) => {
+    seen.push({ url, init });
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
   };
-};
 
 test("provider presets resolve to base URL and model", () => {
   assert.deepEqual(resolveConfig({ provider: "together", apiKey: "k" }), {
@@ -42,7 +44,10 @@ test("no Authorization header without a key (local Ollama)", async () => {
 
 test("sends an OpenAI-style chat request and returns the text", async () => {
   const seen = [];
-  const complete = modelClient({ provider: "together", apiKey: "secret" }, fakeFetch(200, { choices: [{ message: { content: "pong" } }] }, seen));
+  const complete = modelClient(
+    { provider: "together", apiKey: "secret" },
+    fakeFetch(200, { choices: [{ message: { content: "pong" } }] }, seen),
+  );
   assert.equal(await complete([{ role: "user", content: "ping" }], { maxTokens: 16 }), "pong");
   assert.equal(seen[0].url, "https://api.together.xyz/v1/chat/completions");
   assert.equal(seen[0].init.headers.Authorization, "Bearer secret");

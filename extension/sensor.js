@@ -9,3 +9,18 @@ export function contextFlags(tab, { focusedWindowId, idleState = "active", force
   if (tab.windowId !== focusedWindowId) return null;
   return { browserFocused: true, idleState };
 }
+
+// Same page for "Take me back": ignores the #fragment and a trailing slash.
+export function sameDocument(a, b) {
+  const norm = (u) => {
+    try {
+      const url = new URL(u);
+      url.hash = "";
+      return url.href.replace(/\/$/, "");
+    } catch {
+      return null;
+    }
+  };
+  const na = norm(a);
+  return na !== null && na === norm(b);
+}

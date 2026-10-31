@@ -5,19 +5,18 @@
 import { Memory } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
-import { hostOf, relevanceKey, labelKeys, builtinLabel } from "../attention/relevance.js";
+import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable } from "../attention/relevance.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance } from "../agent/relevance.js";
-import { contextFlags } from "./sensor.js";
+import { contextFlags, sameDocument } from "./sensor.js";
 
 const memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
-const IDLE_AFTER_SEC = 120;
 const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"] };
 
 // ---- Schedules -----------------------------------------------------------
@@ -27,10 +26,13 @@ const ALARMS = { distill: 60, "memory-maintain": 15, "attention-heartbeat": 0.5 
 for (const [name, periodInMinutes] of Object.entries(ALARMS)) {
   chrome.alarms.get(name).then((a) => a || chrome.alarms.create(name, { periodInMinutes }));
 }
-chrome.idle.setDetectionInterval(IDLE_AFTER_SEC);
+config().then((cfg) => chrome.idle.setDetectionInterval(cfg.idleAfterSec));
 
 chrome.alarms.onAlarm.addListener(({ name }) => {
-  if (name === "attention-heartbeat" || name === "attention-wake") tick();
+  // The heartbeat looks at the page in front: after sleep it finds the person back
+  // even when no tab or idle event comes. Same page, so no switch.
+  if (name === "attention-heartbeat") sense(activeTab);
+  else if (name === "attention-wake") tick();
   else if (name === "distill") distill();
   else if (name === "memory-maintain") maintain();
 });
@@ -58,11 +60,21 @@ async function engineState(cfg, ts) {
   else if (intent) {
     const payload = { id: intent.id, title: intent.title, topic: intent.topic, restored: true };
     s = (await apply(s, { type: "session", ts, kind: "intent_set", payload }, cfg)).state;
+    const { lastRelevant } = await chrome.storage.local.get("lastRelevant");
+    if (lastRelevant?.intentId === intent.id) {
+      const { intentId: _, ...place } = lastRelevant;
+      s = { ...s, lastRelevant: place };
+    }
   }
   await saveEngine(s);
   return s;
 }
-const saveEngine = (engine) => chrome.storage.session.set({ engine });
+// The last work page also goes to local storage, so "Take me back" survives a restart.
+async function saveEngine(engine) {
+  await chrome.storage.session.set({ engine });
+  if (engine.lastRelevant && engine.intent)
+    await chrome.storage.local.set({ lastRelevant: { ...engine.lastRelevant, intentId: engine.intent.id } });
+}
 const log = async (record) => (await store).appendEvent(record);
 
 // ---- The engine loop -----------------------------------------------------
@@ -76,7 +88,7 @@ async function process(input) {
   // A goal left over from yesterday (or hours ago) becomes an open loop.
   if (input.type === "context" && s.intent) {
     const intent = await (await store).activeIntent();
-    if (intent && isExpired(intent, input.ts, s.lastTs ?? input.ts, cfg)) {
+    if (intent && isExpired(intent, input.ts, s.lastActiveTs ?? input.ts, cfg)) {
       await (await store).putIntent({ ...intent, expiredAt: input.ts });
       const done = { type: "session", ts: input.ts, kind: "intent_done", payload: { id: intent.id, expired: true } };
       s = (await apply(s, done, cfg)).state;
@@ -95,6 +107,9 @@ async function apply(s, input, cfg) {
       await log(o);
       if (o.type === "trigger") await showTrigger(o, r.state);
       if (o.type === "state" && ["focused", "no_intent", "paused"].includes(o.to)) await setBadge(null);
+      // Back on a work page before answering (a new tab or a search is not back yet).
+      const backAtWork = o.type === "state" && o.to === "focused" && r.state.current?.label === "related";
+      if (backAtWork && ["detour", "drifting"].includes(o.from)) await selfReturn(o.ts);
     }
   }
   scheduleWake(r.state, cfg);
@@ -135,7 +150,7 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const flags = contextFlags(tab, {
     focusedWindowId: win?.focused ? win.id : -1,
-    idleState: idleState ?? (await chrome.idle.queryState(IDLE_AFTER_SEC)),
+    idleState: idleState ?? (await chrome.idle.queryState((await config()).idleAfterSec)),
     forceUnfocused,
   });
   if (!flags) return; // not the page in front
@@ -178,7 +193,7 @@ async function knownLabel(intent, url, title) {
     if (l) return { label: l.label, confidence: 1, source: "label" };
   }
   const cached = await st.getCached(relevanceKey(intent.id, url, title));
-  return cached ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
+  return cacheUsable(cached, Date.now()) ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => sense(() => chrome.tabs.get(tabId)));
@@ -236,8 +251,8 @@ async function judge(need) {
     ok: r.source === "llm",
     ...(r.error && { error: r.error }),
   });
-  if (r.source === "llm")
-    await st.putCached({ key: need.key, label: r.label, confidence: r.confidence, source: "llm", ts: Date.now() });
+  // Fallbacks too, briefly (cacheUsable), so a model that is down is not called on every visit.
+  await st.putCached({ key: need.key, label: r.label, confidence: r.confidence, source: r.source, ts: Date.now() });
   await feed({
     type: "relevance",
     ts: Date.now(),
@@ -270,12 +285,15 @@ async function respond({ choice }) {
     const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
     const ts = Date.now();
     const before = await engineState(await config(), ts);
+    // Nowhere to go back to yet: leave the nudge open (the popup disables the button).
+    if (choice === "back" && !before.lastRelevant) return { ok: false, reason: "no related page yet" };
     const page = lastTrigger?.evidence; // the page the nudge was about
     const s = await process({
       type: "response",
       ts,
       triggerId: lastTrigger?.id ?? null,
       choice,
+      pageUrl: page?.url,
       latencyMs: lastTrigger ? ts - lastTrigger.ts : null,
     });
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
@@ -286,12 +304,25 @@ async function respond({ choice }) {
   });
 }
 
+// The person went back to work before answering: the nudge is over.
+async function selfReturn(ts) {
+  const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
+  if (!lastTrigger || lastTrigger.respondedAt || lastTrigger.resolvedAt) return;
+  await chrome.storage.local.set({ lastTrigger: { ...lastTrigger, resolvedAt: ts, resolvedBy: "self" } });
+  await log({
+    type: "feedback",
+    ts,
+    kind: "self_return",
+    payload: { triggerId: lastTrigger.id, afterMs: ts - lastTrigger.ts },
+  });
+}
+
 // Focus the last related tab, or reopen its page.
 async function takeMeBack(last) {
   if (!last) return;
   const tab = await chrome.tabs.get(last.tabId).catch(() => null);
   // The tab may be gone, or now showing something else: then reopen the page.
-  if (tab && tab.url === last.url) {
+  if (tab && sameDocument(tab.url, last.url)) {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
   } else {

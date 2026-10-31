@@ -13,7 +13,12 @@ const good = {
 };
 
 test("prompt carries the activity, memory context, topics and date", () => {
-  const [sys, user] = distillMessages({ activityText: "Last 60 min: x", contextPrompt: "Open loops: y", topics: ["shop"], date: "2026-10-30" });
+  const [sys, user] = distillMessages({
+    activityText: "Last 60 min: x",
+    contextPrompt: "Open loops: y",
+    topics: ["shop"],
+    date: "2026-10-30",
+  });
   assert.equal(sys.role, "system");
   assert.match(sys.content, /JSON array only/);
   assert.match(user.content, /Today: 2026-10-30/);
@@ -40,7 +45,9 @@ test("an empty array means nothing worth keeping", () => {
 });
 
 test("invalid items are rejected with reasons; valid ones survive", () => {
-  const { entries, rejected } = parseEntries(JSON.stringify([good, { ...good, kind: "idea" }, { title: "x" }]), { date: "2026-10-30" });
+  const { entries, rejected } = parseEntries(JSON.stringify([good, { ...good, kind: "idea" }, { title: "x" }]), {
+    date: "2026-10-30",
+  });
   assert.equal(entries.length, 1);
   assert.equal(rejected.length, 2);
   assert.match(rejected[0].errors.join(";"), /kind/);

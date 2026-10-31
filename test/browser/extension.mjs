@@ -58,13 +58,16 @@ const watch = (p) => p.on("pageerror", (e) => errors.push(String(e)));
 
 // Settings: the fake model, and short timings so the test runs in seconds. The test
 // hops between tabs to reach the popup, so fragmentation (unit-tested) is off here.
+// Chrome's idle state is the machine's: the test must not depend on someone typing.
 const settingsPage = await ctx.newPage();
 watch(settingsPage);
 await settingsPage.goto(`${ext}/extension/options/options.html`);
 await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" });
-  await chrome.storage.local.set({ attentionConfig: { toleranceSec: 3, escalateAfterSec: 2, fragMinSwitches: 1000 } });
+  await chrome.storage.local.set({
+    attentionConfig: { toleranceSec: 3, escalateAfterSec: 2, fragMinSwitches: 1000, idleAfterSec: 86400 },
+  });
 }, `http://127.0.0.1:${port}/v1`);
 
 // Popup (opened as a tab): set the goal.
@@ -125,10 +128,23 @@ await popup.evaluate(() => chrome.storage.session.clear());
 await videoTab.bringToFront();
 const drift4 = await waitForNewDrift(drift2.id);
 await clickOnCard("#take-me-back");
+const backAfterRestart = await activeUrl();
+
+// Minor 6: going back to work on your own clears the nudge.
+await videoTab.bringToFront();
+const drift5 = await waitForNewDrift(drift4.id);
+await ctx
+  .pages()
+  .find((p) => p.url() === repo)
+  .bringToFront();
+await popup.waitForTimeout(1500);
+const selfReturn = await lastTrigger();
+await popup.reload();
+const cardAfterSelfReturn = await popup.isVisible("#trigger");
 
 // "This is for my task" on the video: the next visit stays quiet.
 await videoTab.bringToFront();
-const drift3 = await waitForNewDrift(drift4.id);
+const drift3 = await waitForNewDrift(drift5.id);
 await clickOnCard("#for-my-task");
 await videoTab.bringToFront();
 await videoTab.waitForTimeout(6000);
@@ -166,7 +182,11 @@ assert.equal(reopened, repo);
 assert.equal(afterLabel.id, drift3.id, "no new trigger on a page marked as work");
 assert.equal(afterLabel.choice, "related");
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
+assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
+assert.equal(selfReturn.id, drift5.id);
+assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
+assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");

@@ -66,3 +66,11 @@ export function builtinLabel(url, ownOrigin = "") {
 export function isUnsure({ label, confidence }, cfg) {
   return label === "unrelated" && confidence < cfg.unsureConfidence;
 }
+
+// A model answer holds for good; a fallback (model down, bad reply) only briefly,
+// so a recovered model is asked again without calling it on every visit meanwhile.
+export const FALLBACK_TTL_MS = 2 * 60 * 1000;
+export function cacheUsable(entry, now) {
+  if (!entry) return false;
+  return entry.source !== "fallback" || now - entry.ts < FALLBACK_TTL_MS;
+}

@@ -16,6 +16,7 @@ export function initialState() {
     state: "no_intent",
     budgetSec: 0,
     lastTs: null,
+    lastActiveTs: null, // the last input showing the person at the browser
     current: null,
     lastRelevant: null,
     timeline: [],
@@ -106,6 +107,7 @@ function applyContext(s, input, candidates, cfg) {
     candidates.push("return");
   s.away = false;
   s.awaySince = null;
+  s.lastActiveTs = input.ts;
   const today = dayKey(input.ts, cfg);
   if (!s.intent && s.sessionDay !== today) {
     candidates.push("session_start");
@@ -181,7 +183,9 @@ function applyResponse(s, input, cfg) {
     s.policy.episode = null;
     s.lastDriftTs = null;
   }
-  if (input.choice === "related" && s.current) {
+  // The nudged page; the person may have moved on since (pageUrl absent: the page in front).
+  const nudgedIsCurrent = !input.pageUrl || input.pageUrl === s.current?.url;
+  if (input.choice === "related" && s.current && nudgedIsCurrent) {
     Object.assign(s.current, { label: "related", confidence: 1, pending: false });
     const last = s.timeline.at(-1);
     if (last?.key === s.current.key) last.label = "related";
@@ -228,7 +232,8 @@ export function step(prev, input, cfg = DEFAULTS) {
 
   if (s.breakUntil != null && ts >= s.breakUntil) {
     s.breakUntil = null;
-    if (s.intent) candidates.push("break_over");
+    // Already back at work: nothing to say.
+    if (s.intent && labelOf(s.current) !== "related") candidates.push("break_over");
   }
 
   // 3. Where that leaves the person.

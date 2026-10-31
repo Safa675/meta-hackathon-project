@@ -1,5 +1,6 @@
 import { Memory } from "../../memory/index.js";
 import { loadModelSettings } from "../../memory/model.js";
+import { activityRows } from "./activity.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -48,13 +49,36 @@ async function render() {
   $("mode").value = engine.mode;
   $("state-pill").textContent = STATE[engine.state] ?? engine.state;
   $("state-pill").className = `pill ${engine.state}`;
-  const show = lastTrigger && !lastTrigger.respondedAt && lastTrigger.kind !== "session_start";
+  const show =
+    lastTrigger && !lastTrigger.respondedAt && !lastTrigger.resolvedAt && lastTrigger.kind !== "session_start";
   $("trigger").hidden = !show;
   if (show) $("trigger-text").textContent = triggerText(lastTrigger);
+  $("take-me-back").disabled = !engine.lastRelevant;
+  $("take-me-back").title = engine.lastRelevant ? `Back to ${engine.lastRelevant.title}` : "No work page yet";
 }
 
 async function renderActivity() {
-  $("activity").textContent = (await memory.activity({ minutes: 30 })).text;
+  const rows = activityRows((await memory.activity({ minutes: 30 })).spans);
+  const list = $("activity");
+  list.replaceChildren();
+  $("activity-empty").hidden = rows.length > 0;
+  for (const r of rows) {
+    const li = document.createElement("li");
+    li.className = "site";
+    const head = document.createElement("div");
+    head.className = "row between";
+    const name = Object.assign(document.createElement("span"), { className: "site-name", textContent: r.site });
+    const time = Object.assign(document.createElement("span"), { className: "small muted", textContent: r.time });
+    head.append(name, time);
+    const bar = Object.assign(document.createElement("div"), { className: "bar" });
+    bar.style.setProperty("--share", r.share.toFixed(2));
+    const title = Object.assign(document.createElement("div"), {
+      className: "small muted site-title",
+      textContent: r.title,
+    });
+    li.append(head, bar, title);
+    list.append(li);
+  }
 }
 
 async function renderSetup() {
@@ -112,6 +136,8 @@ $("give-me-5").onclick = respond("break");
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.lastTrigger) render();
 });
+// Keep the open popup current while the person browses.
+setInterval(renderActivity, 15000);
 
 render();
 renderActivity();
