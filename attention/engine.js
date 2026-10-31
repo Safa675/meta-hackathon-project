@@ -4,11 +4,9 @@
 // recorded log replays exactly. Design: docs/superpowers/specs/2026-10-31-attention-agent-design.md §6.1.
 import { DEFAULTS } from "./config.js";
 import { isUnsure } from "./relevance.js";
+import { initialPolicy, decide as policyDecide } from "./policy.js";
 
 const S = 1000;
-
-// Until the policy exists every candidate passes at level 1.
-const passThrough = (policy, candidate) => ({ policy, trigger: { ...candidate, level: 1 } });
 
 export function initialState() {
   return {
@@ -27,7 +25,7 @@ export function initialState() {
     asked: {},
     lastDriftTs: null,
     fragFiredTs: null,
-    policy: { episode: null, cooldownUntil: {} },
+    policy: initialPolicy(),
     tolerance: {},
   };
 }
@@ -153,7 +151,7 @@ function applySession(s, input) {
   if (input.kind === "intent_set") {
     s.intent = input.payload;
     s.budgetSec = 0;
-    s.policy = { episode: null, cooldownUntil: {} };
+    s.policy = initialPolicy();
   } else if (input.kind === "intent_done") {
     s.intent = null;
     s.budgetSec = 0;
@@ -181,7 +179,7 @@ function applyResponse(s, input, cfg) {
 }
 
 export function step(prev, input, cfg = DEFAULTS) {
-  const decide = cfg.decide ?? passThrough;
+  const decide = cfg.decide ?? policyDecide;
   const s = structuredClone(prev);
   const ts = input.ts;
   const before = s.state;
