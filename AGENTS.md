@@ -66,8 +66,9 @@ If a check was skipped or failed, say so plainly. Your own second pass is not ve
 
 ## Git
 
-Plain imperative subject, as in the existing history (no Conventional prefix). No trailers, ever —
-no `Co-Authored-By`. Never push unless asked, every time.
+Conventional Commits (`feat(scope): …`, `fix(scope): …`, `docs: …`). No trailers, ever —
+no `Co-Authored-By`. Commits before Nov 1 2026 use plain sentences; leave them as they are.
+Never push unless asked, every time.
 
 - **Protected branches:** `main`. Branch first; never commit ordinary work there.
 - **Commit body width:** 72

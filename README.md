@@ -1,6 +1,6 @@
-# Meta Hackathon Project
+# Tuck — a focus companion
 
-Chrome extension (MV3): a focus agent that knows what you meant to do and notices when you drift. Optional later: a connection to a Muse Code session.
+Chrome extension (MV3): Tuck, a little folded companion that knows what you meant to do, notices when you drift, and appears on the page to talk you back. Optional later: a connection to a Muse Code session.
 
 Built during the Meta AI developer hackathon. Design inspired by a private personal knowledge system; no code reused.
 
@@ -12,6 +12,7 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 | `attention/` | İrem | The attention engine: a pure reducer over browsing events: relevance keys, drift budget, states, triggers, intervention policy, shadow goals, event log store |
 | `agent/` | İrem (audit by Safa) | LLM nodes with structured output: `relevance.js` judges one page against the goal. `audit.js` is Safa's earlier audit, kept as reference and not wired |
 | `evals/` | İrem | `npm run eval`: relevance accuracy against the real model |
+| `extension/tuck/` | İrem | Tuck's artwork and motion (SVG + CSS, five states); `scripts/make-icons.mjs` renders the toolbar icons from it |
 | `extension/` | İrem (first version by Safa) | Background worker (Chrome events → engine → event log, relevance calls, badge, hourly distill, upkeep), popup (goal, state, nudge with *Take me back* / *This is for my task* / *5-min break*, mode), settings page (model, brain, event log export/import) |
 | `manifest.json` | İrem | At the root so Chrome can load both folders |
 | `test/` | both | `npm test` (node), `npm run test:browser` (real Chromium) |
@@ -54,7 +55,7 @@ npm run test:live:audit   # audit scenarios against the real model
 1. `chrome://extensions` → Developer mode → Load unpacked → this folder.
 2. Pin the extension, open Settings (from the popup), pick a provider, paste the key, Save, Test connection.
 3. Optional: Connect folder → your second-brain checkout.
-4. In the popup, say what you are about to do. Browse. About 45 seconds on an unrelated page and the badge shows a nudge; open the popup to answer it. The options page exports the event log.
+4. Open any web page: Tuck greets you at the top right and asks what you are working on. Browse. About 45 seconds on an unrelated page and Tuck slides in; stay longer and it asks you to come back. The popup has the same controls; the options page exports the event log.
 
 Secret scanning: `pre-commit install` (gitleaks). The fake keys in `test/consolidate.test.js` are fixtures for the redactor.
 

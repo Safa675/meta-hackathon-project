@@ -1,6 +1,7 @@
 import { Memory } from "../../memory/index.js";
 import { loadModelSettings } from "../../memory/model.js";
 import { activityRows } from "./activity.js";
+import { nudgeText } from "../overlay/present.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -16,28 +17,6 @@ const STATE = {
   paused: "Paused",
 };
 
-const duration = (sec) => (sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`);
-
-// Template text for each trigger kind. Plan 2 replaces these with the agent's words.
-function triggerText(t) {
-  const goal = t.intentTitle ?? "your goal";
-  const e = t.evidence ?? {};
-  switch (t.kind) {
-    case "drift":
-      return `You've been on ${e.host} for ${duration(e.dwellSec ?? 0)} — back to ${goal}?`;
-    case "fragmentation":
-      return "Lots of tab hopping — want to pick one thing?";
-    case "return":
-      return `Welcome back. You were on ${e.lastRelevant?.title ?? goal}.`;
-    case "break_over":
-      return `Break's over — ready for ${goal}?`;
-    case "session_start":
-      return "What are we working on today?";
-    default:
-      return "";
-  }
-}
-
 async function render() {
   const { engine, lastTrigger, intent } = await send("get-status");
   $("intent-view").hidden = !intent;
@@ -52,7 +31,7 @@ async function render() {
   const show =
     lastTrigger && !lastTrigger.respondedAt && !lastTrigger.resolvedAt && lastTrigger.kind !== "session_start";
   $("trigger").hidden = !show;
-  if (show) $("trigger-text").textContent = triggerText(lastTrigger);
+  if (show) $("trigger-text").textContent = nudgeText(lastTrigger);
   $("take-me-back").disabled = !engine.lastRelevant;
   $("take-me-back").title = engine.lastRelevant ? `Back to ${engine.lastRelevant.title}` : "No work page yet";
 }
@@ -139,6 +118,17 @@ chrome.storage.onChanged.addListener((changes) => {
 // Keep the open popup current while the person browses.
 setInterval(renderActivity, 15000);
 
+// Tuck in the header; sleeping while you are on a break or not to be disturbed.
+async function renderMark() {
+  const svg = await (await fetch(chrome.runtime.getURL("extension/tuck/tuck.svg"))).text();
+  $("tuck-mark").innerHTML = svg;
+  const { engine } = await send("get-status");
+  $("tuck-mark").querySelector("svg").dataset.state = ["break", "paused"].includes(engine.state)
+    ? "sleeping"
+    : "resting";
+}
+
 render();
+renderMark();
 renderActivity();
 renderSetup();

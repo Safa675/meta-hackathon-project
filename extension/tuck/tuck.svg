@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 260" class="tuck" data-state="resting" role="img" aria-label="Tuck, your focus companion">
+<g class="tuck__effects" fill="var(--tuck-accent, #D6AC70)">
+ <g class="tuck__thought"><rect x="208" y="79" width="7" height="7" rx="1"/><rect x="222" y="58" width="12" height="12" rx="2"/><path d="M236 26h9v-8h9v8h9v9h-9v9h-9v-9h-9z"/></g>
+ <g class="tuck__greeting"><path d="M226 77h7v-7h7v7h7v7h-7v7h-7v-7h-7z"/><rect x="252" y="102" width="7" height="7"/><path d="M27 99h6v-6h6v6h6v6h-6v6h-6v-6h-6z"/></g>
+ <g class="tuck__sparkles"><path d="M36 68l5 11 11 5-11 5-5 11-5-11-11-5 11-5z"/><path d="M226 52l4 9 9 4-9 4-4 9-4-9-9-4 9-4z"/><rect x="249" y="90" width="6" height="6"/></g>
+ <g class="tuck__sleep-effects"><path d="M214 94h13l-13 13h13" fill="none" stroke="currentColor" stroke-width="3"/><path d="M234 66h17l-17 17h17" fill="none" stroke="currentColor" stroke-width="3"/></g>
+</g>
+<g class="tuck__body">
+ <g class="tuck__feet" fill="var(--tuck-body, #9A8AB5)"><rect x="87" y="217" width="23" height="10" rx="3"/><rect x="140" y="217" width="23" height="10" rx="3"/></g>
+ <path fill="var(--tuck-body, #9A8AB5)" d="M53 111H126L214 194 167 212 78 210 39 191Z"/>
+ <g class="tuck__flap"><path fill="var(--tuck-shadow, #786890)" d="M126 111 193 40Q197 36 198 43L214 194Z"/><path class="tuck__flap-light" fill="var(--tuck-highlight, #B5A5CE)" d="M126 111 162 124 214 194Z"/></g>
+ <path fill="var(--tuck-highlight, #B5A5CE)" d="M53 111H126L214 194Z"/>
+ <g class="tuck__face" fill="var(--tuck-eyes, #292832)">
+  <g class="tuck__eyes"><rect x="87" y="158" width="13" height="21" rx="6.5"/><rect x="129" y="156" width="13" height="21" rx="6.5"/></g>
+  <g class="tuck__closed" fill="none" stroke="var(--tuck-eyes, #292832)" stroke-width="5" stroke-linecap="round"><path d="M86 170q7 7 14 0"/><path d="M128 168q7 7 14 0"/></g>
+  <path class="tuck__smile" d="M109 188q7 6 14-1" fill="none" stroke="var(--tuck-eyes, #292832)" stroke-width="3" stroke-linecap="round"/>
+ </g>
+</g></svg>

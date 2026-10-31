@@ -17,6 +17,7 @@ export function initialState() {
     budgetSec: 0,
     lastTs: null,
     lastActiveTs: null, // the last input showing the person at the browser
+    offTaskSince: null, // when the person last left work for something unrelated
     current: null,
     lastRelevant: null,
     timeline: [],
@@ -82,9 +83,11 @@ function evidence(s, ts, cfg) {
     host: s.current?.host ?? "",
     title: s.current?.title ?? "",
     dwellSec: Math.round((ts - entered) / S),
+    awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
     switches2m: windowStats(s, ts, cfg).switches,
     lastRelevant: s.lastRelevant,
+    unsure: s.current ? isUnsure(s.current, cfg) : false,
   };
 }
 
@@ -235,6 +238,11 @@ export function step(prev, input, cfg = DEFAULTS) {
     // Already back at work: nothing to say.
     if (s.intent && labelOf(s.current) !== "related") candidates.push("break_over");
   }
+
+  // Off task since the first unrelated page after work; neutral stops keep the count.
+  const label = labelOf(s.current);
+  if (label === "related") s.offTaskSince = null;
+  else if (label === "unrelated" && s.offTaskSince == null) s.offTaskSince = s.timeline.at(-1)?.ts ?? ts;
 
   // 3. Where that leaves the person.
   const core = coreState(s, ts, cfg);
