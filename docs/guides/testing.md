@@ -12,7 +12,7 @@ what may be written. This file is about tests.
 | unit — replay | The attention engine replays a recorded event log and produces the expected triggers (no unfair warnings, drift caught) | `npm test` | every change |
 | integration | The real extension in real Chromium (Playwright) with a fake model: service worker, overlay, side panel, "Take me back" | `npm run test:browser && npm run test:e2e` | when `extension/` changes, and before a PR |
 | live | Real calls to Meta's Model API with `MODEL_API_KEY` from `.env` | `node --env-file=.env test/live/model.mjs`, `node --env-file=.env test/live/audit.mjs` | only when the human asks |
-| eval | Relevance accuracy (LLM#1) on labelled cases against a baseline | `{{eval command — created with evals/ in the plan}}` | when a prompt or the model changes |
+| eval | Relevance accuracy (LLM#1) on labelled cases against a baseline | `npm run eval` | when a prompt or the model changes |
 | live smoke | The whole product in the user's real Chrome | `test/live_smoke.md` | only when a human arms it |
 
 `npm test` runs only `test/*.test.js`. Integration tests live in `test/browser/`
@@ -59,7 +59,7 @@ agent never runs it on its own initiative.
 
 ## Not checked yet
 
-- **Relevance accuracy (LLM#1)** — needs the JS eval in `evals/`, built in the plan.
+- **Relevance accuracy (LLM#1)** — the eval exists (`npm run eval`) but has no accepted baseline yet: the case labels await İrem's review and the first real run.
 - **No unfair warnings / drift is caught** — need the replay tests and a recorded
   log in `test/fixtures/`, built in the plan.
 - **Intervention speed** — threshold open in `INTENT.md`; an e2e timing test

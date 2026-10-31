@@ -24,6 +24,7 @@ side panel, overlay, options) · `memory/` Safa's, used through the `Memory` API
 | test — one | `node --test test/<name>.test.js` |
 | test — integration | `npm run test:browser && npm run test:e2e` |
 | test — live | `node --env-file=.env test/live/model.mjs` (real API; only when asked) |
+| eval | `npm run eval` (relevance, real API; `REPS=1` for a quick run) |
 | format | `npx prettier --write <file>` (no lint; never reformat untouched files) |
 | typecheck | none (plain JS) |
 
