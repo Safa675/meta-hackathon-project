@@ -1,9 +1,5 @@
 # Workflow
 
-<!-- The default loop. Keep it, edit it, or replace it with your own by
-     running /agent-onboarding:setup-workflow. Tool names in {{braces}} are
-     slots: write in the tool you use, or delete the sentence. -->
-
 How a change goes from idea to merged PR with a coding agent. Adapted from
 Anthropic's [AI-Native SDLC Playbook](https://academy.claude.com/courses/ai-native-sdlc-playbook/introduction),
 sized for one engineer and one repository.
@@ -52,13 +48,12 @@ out of scope. No formal language. The agent reads `INTENT.md` first: the
 change either serves a section of it, or it changes the intent, and then
 `INTENT.md` is updated before the plan. The agent asks about scope, users,
 constraints and what success looks like until the idea is concrete. Research
-comes in from {{where your notes and issues live, e.g. an issue tracker}}.
+comes in from GitHub issues on the repo and the design in `docs/superpowers/specs/`.
 
 ## 2. Design
 
 The agent drafts the architecture and the UI against `DESIGN.md` and
-`DECISIONS.md`. Architecture goes on {{your design board, or a section in the
-plan}}, UI in {{your UI tool, or the browser}}. The agent lists every place
+`DECISIONS.md`. Architecture goes on a design doc in `docs/superpowers/specs/`, UI in the browser. The agent lists every place
 where it cannot satisfy a rule, or where two rules conflict. I settle those
 before any code exists. A real choice goes into `DECISIONS.md` with its
 reason.
@@ -66,8 +61,8 @@ reason.
 ## 3. Plan
 
 Start in plan mode, where the agent can read but not edit. On a large or
-unfamiliar codebase, map it first ({{your codebase map, or a read-only
-exploration}}) so the plan comes from the real structure, not from guessing.
+unfamiliar codebase, map it first (a read-only
+exploration) so the plan comes from the real structure, not from guessing.
 The plan names the files that change, the order of work, the riskiest step,
 and the test plan: which tier proves it, which cases are new, and which eval
 criteria the change touches. Before accepting it, ask: what could this break,
