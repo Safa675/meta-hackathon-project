@@ -40,8 +40,10 @@ medical or therapeutic help.
 
 - **Never punish, never block.** An intervention never locks the page, opens a modal,
   or cannot be dismissed. Breaking this turns a buddy into a blocker people uninstall.
-- **A false warning is worse than a missed drift.** When relevance is unsure, the page
-  counts as neutral. Breaking this makes it nag during research — the main way it fails.
+- **Both errors count: false warnings and missed drifts.** A buddy that nags during
+  research gets uninstalled; one that misses most distractions is useless. Every nudge
+  offers a one-click correction, both rates are measured, and feedback tunes them.
+  Breaking this makes the companion either annoying or pointless.
 - **Facts and timing are deterministic.** Sensors, dwell time, budget, state, triggers,
   cooldowns and modes are plain code; the model only judges. Breaking this makes timing
   unreliable and behaviour untestable.

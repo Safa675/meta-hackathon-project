@@ -35,7 +35,8 @@ Judging criteria: creativity, technical ambition, whether it works. So: **the co
 - Screenshots or reading page content (URL + title + signals only).
 
 **Anti-goals (failure even if it technically works)**
-- A nagging companion: unfair warnings during research, repeating itself. A false positive is worse than a false negative.
+- A nagging companion: unfair warnings during research, repeating itself.
+- A blind companion: missing most real distractions. Both errors are measured (replay) and corrected through feedback.
 - Intervention that blocks the page, opens a modal, or cannot be dismissed.
 - Moralising, medical or mental-health advice, diagnostic language.
 - A demo flow that stalls (LLM latency must never show up as the user waiting).
