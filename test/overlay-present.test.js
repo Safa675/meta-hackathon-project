@@ -78,18 +78,23 @@ test("after Done: what's next, with the goal form", () => {
   assert.equal(v.bubble.text, "Nice! What's next?");
 });
 
-test("goal set and nudge resolved: a welcome hop, then Tuck leaves", () => {
+test("goal set and nudge resolved: a welcome hop, then Tuck rests on the page", () => {
   assert.deepEqual(present({ event: "goal_set" }), {
     tuck: "welcome",
+    settle: "resting",
     bubble: { kind: "note", text: "Got it — let's go." },
-    leaveAfterMs: 2000,
+    closeBubbleAfterMs: 2000,
   });
-  assert.deepEqual(present({ event: "resolved" }), { tuck: "welcome", bubble: null, leaveAfterMs: 2000 });
+  assert.deepEqual(present({ event: "resolved" }), { tuck: "welcome", settle: "resting", bubble: null });
 });
 
-test("clicking Tuck with no nudge shows the goal card", () => {
+test("on any page with a goal, Tuck rests quietly", () => {
+  assert.deepEqual(present({ event: "presence" }), { tuck: "resting", bubble: null, quiet: true });
+});
+
+test("clicking Tuck with no nudge: a check-in wave and the goal card", () => {
   const v = present({ event: "card", intent: { title: "Fix the bug", steps: ["Write the failing test"] } });
-  assert.equal(v.tuck, "resting");
+  assert.equal(v.tuck, "checkin");
   assert.deepEqual(v.bubble, { kind: "card", text: "Fix the bug", next: "Write the failing test" });
 });
 

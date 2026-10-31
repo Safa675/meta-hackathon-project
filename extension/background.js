@@ -113,6 +113,7 @@ async function apply(s, input, cfg) {
       if (backAtWork && ["detour", "drifting"].includes(o.from)) await selfReturn(o.ts);
     }
   }
+  if (input.type === "context") await presence(s, r.state, input);
   if (input.type === "context" && !r.state.intent && !["dnd", "off"].includes(r.state.mode)) {
     const { pendingGreeting } = await chrome.storage.session.get("pendingGreeting");
     if (pendingGreeting) await greet(input.tabId);
@@ -304,7 +305,10 @@ async function assets() {
 async function showTuck(tabId, view) {
   if (tabId == null || !view) return false;
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["extension/overlay/overlay.js"] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["extension/overlay/layout.js", "extension/overlay/overlay.js"],
+    });
     await chrome.tabs.sendMessage(tabId, { type: "tuck-show", view, assets: await assets() });
     await chrome.storage.session.set({ tuckTab: tabId });
     return true;
@@ -313,9 +317,20 @@ async function showTuck(tabId, view) {
   }
 }
 
-async function hideTuck() {
+async function hideTuck(type = "tuck-hide") {
   const { tuckTab } = await chrome.storage.session.get("tuckTab");
-  if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type: "tuck-hide" }).catch(() => {});
+  if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type }).catch(() => {});
+}
+// Close the bubble and settle back to resting, staying on the page.
+const restTuck = () => hideTuck("tuck-rest");
+
+// While there is a goal, Tuck rests on every page (not on a break, paused or off).
+async function presence(prev, s, input) {
+  const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+  if (!changed || !s.current?.url) return;
+  const away = ["break", "paused"].includes(s.state);
+  if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
+  else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
 }
 
 // The day's greeting with the goal form. If the first page cannot hold Tuck (a new
@@ -351,7 +366,8 @@ async function respond({ choice }) {
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
     await setBadge(null);
     if (choice === "related") await showTuck(before.current?.tabId, present({ event: "resolved" }));
-    else await hideTuck();
+    else if (choice === "break") await hideTuck();
+    else await restTuck();
     if (choice === "back") await takeMeBack(s.lastRelevant);
     if (choice === "related" && page?.host && before.intent) await markRelated(page, before.intent, ts);
     return { ok: true };
@@ -363,7 +379,7 @@ async function selfReturn(ts) {
   const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
   if (!lastTrigger || lastTrigger.respondedAt || lastTrigger.resolvedAt) return;
   await chrome.storage.local.set({ lastTrigger: { ...lastTrigger, resolvedAt: ts, resolvedBy: "self" } });
-  await hideTuck();
+  await restTuck();
   await showTuck((await loadEngine()).current?.tabId, present({ event: "resolved" }));
   await log({
     type: "feedback",
