@@ -3,5 +3,5 @@
   "surfaces": ["ui", "llm-agent"],
   "languages": ["javascript"],
   "modules": ["core", "testing", "planning", "design", "lang-node"],
-  "notes": "evals module skipped: the Python harness does not fit a JS-only repo; a simple JS eval replaces it. Tests live in test/ (singular)."
+  "notes": "evals module skipped: the Python harness does not fit a JS-only repo; a simple JS eval replaces it. Tests live in test/ (singular); test/unit/ mirrors src/. The extension is src/."
 }

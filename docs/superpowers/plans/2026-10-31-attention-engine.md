@@ -1,5 +1,7 @@
 # Attention Engine Implementation Plan (Plan 1 of 2)
 
+> **Done, kept as a record.** Paths below are from before the 2026-11-01 reorganisation: `attention/`, `agent/`, `memory/` now live under `src/`, `extension/background.js` is `src/background/index.js`, popup and options are `src/popup/` and `src/options/`, and tests are `test/unit/<area>/<name>.test.js`. Full mapping: design §13.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A working, measurable attention engine in the extension: it logs every browsing event, judges each page against the stated goal, detects drift and fragmentation, decides intervention levels, and surfaces them through the badge and popup with *Take me back* / *This is for my task* / *5-min break* — verified by unit, replay and e2e tests and a relevance eval.

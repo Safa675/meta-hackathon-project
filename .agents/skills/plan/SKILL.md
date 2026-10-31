@@ -12,7 +12,7 @@ convention for the artifact it leaves behind.
 
 Applies to work spanning more than one session. Shorter work needs no file.
 
-1. **Read `INTENT.md` and check `DECISIONS.md` first.** Do not propose something already rejected there.
+1. **Read `docs/INTENT.md` and check `docs/DECISIONS.md` first.** Do not propose something already rejected there.
 2. **Write the plan to `docs/plans/YYYY-MM-<slug>.md`.** The date prefix is how
    staleness becomes visible without opening the file.
 3. **Include a `Done when:` line** — a command and its expected output, not "when
@@ -22,9 +22,9 @@ Applies to work spanning more than one session. Shorter work needs no file.
    is stale on the next commit.
 5. **Use the template in `docs/guides/workflow.md`**: Intent, Design, Plan,
    Test plan, and `Done when:`. Skip a section only when it has nothing to say.
-   The Intent section is about this change: link the `INTENT.md` section it
+   The Intent section is about this change: link the `docs/INTENT.md` section it
    serves; do not restate the product. If the change conflicts with
-   `INTENT.md`, stop and say so.
+   `docs/INTENT.md`, stop and say so.
 6. **The test plan names the tier** from `docs/guides/testing.md`, the cases
    the change adds, and, for a change to LLM or agent behavior, the eval
    criteria it touches and the baseline it is compared with. `Done when:`
@@ -34,4 +34,4 @@ Applies to work spanning more than one session. Shorter work needs no file.
 8. **Close the plan when the work lands; do not delete it.** Set
    `Status: done` with the PR link at the top. The plan stays in git as the
    record of what was asked and decided. Durable knowledge still moves to
-   `docs/guides/`, and choices to `DECISIONS.md`.
+   `docs/guides/`, and choices to `docs/DECISIONS.md`.

@@ -7,8 +7,8 @@
 //   REPS            runs per case, default 3 (the majority label counts)
 import fs from "node:fs";
 import path from "node:path";
-import { modelClient } from "../memory/model.js";
-import { classifyRelevance } from "../agent/relevance.js";
+import { modelClient } from "../src/memory/model.js";
+import { classifyRelevance } from "../src/agent/relevance.js";
 
 const ACCURACY_MIN = 0.85;
 const FALSE_UNRELATED_MAX = 0.05;

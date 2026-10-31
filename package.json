@@ -4,10 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test \"test/unit/**/*.test.js\"",
     "test:browser": "node test/browser/run.mjs",
     "test:live": "node test/live/model.mjs",
-    "test:live:audit": "node test/live/audit.mjs",
     "test:e2e": "node test/browser/extension.mjs",
     "eval": "node --env-file=.env evals/run.mjs"
   },

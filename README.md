@@ -6,20 +6,38 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 
 ## Layout
 
-| Folder | Owner | What |
-|---|---|---|
-| `memory/` | Safa | Memory: entries, consolidation, recall, context pack, brain folder connector. See [memory/README.md](memory/README.md) |
-| `attention/` | İrem | The attention engine: a pure reducer over browsing events: relevance keys, drift budget, states, triggers, intervention policy, shadow goals, event log store |
-| `agent/` | İrem (audit by Safa) | LLM nodes with structured output: `relevance.js` judges one page against the goal. `audit.js` is Safa's earlier audit, kept as reference and not wired |
-| `evals/` | İrem | `npm run eval`: relevance accuracy against the real model |
-| `extension/tuck/` | İrem | Tuck's artwork and motion (SVG + CSS, five states); `scripts/make-icons.mjs` renders the toolbar icons from it |
-| `extension/` | İrem (first version by Safa) | Background worker (Chrome events → engine → event log, relevance calls, badge, hourly distill, upkeep), popup (goal, state, nudge with *Take me back* / *This is for my task* / *5-min break*, mode), settings page (model, brain, event log export/import) |
-| `manifest.json` | İrem | At the root so Chrome can load both folders |
-| `test/` | both | `npm test` (node), `npm run test:browser` (real Chromium) |
+```
+src/                 the extension — "Load unpacked" points here
+  manifest.json
+  background/        service worker: Chrome events → engine → event log, model calls, Tuck
+  attention/         the attention engine (pure, no Chrome): relevance keys, drift budget,
+                     states, triggers, policy, shadow goals, replay, event log store
+  agent/             LLM nodes, structured output: relevance.js (LLM#1), nudge.js (LLM#4)
+  memory/            Safa's memory: entries, recall, context pack, brain folder (see src/memory/README.md)
+  tuck/              Tuck on the page: overlay, bubble layout, what to show, voice
+    assets/          Tuck's artwork and motion (SVG + CSS, five states)
+  popup/  options/   the toolbar popup and the settings page
+  shared/            ui.css and the toolbar icons
+test/
+  unit/              node tests, mirroring src/ (unit/attention, unit/agent, unit/memory, …)
+  browser/           the real extension in Chromium (Playwright)
+  live/              real-model checks
+  fixtures/          recorded sessions for the replay criteria
+evals/               npm run eval: relevance accuracy against the real model
+scripts/             make-icons.mjs renders the toolbar icons from src/tuck/assets/tuck.svg
+checks/              pre-commit checks
+docs/                INTENT.md, DECISIONS.md, DESIGN.md, guides/, design specs and plans
+```
+
+| Folder | Owner |
+|---|---|
+| `src/memory/` | Safa |
+| `src/attention/`, `src/agent/`, `src/tuck/`, `src/background/`, `src/popup/`, `src/options/`, `evals/` | İrem |
+| `test/` | both |
 
 ## Status
 
-Memory is complete and tested (node and real Chromium): entries, consolidation, topic-aware recall, context pack, activity log, distill, scheduled upkeep, and the brain folder connection (import, export, re-sync from the remembered folder). See [memory/README.md](memory/README.md).
+Memory is complete and tested (node and real Chromium): entries, consolidation, topic-aware recall, context pack, activity log, distill, scheduled upkeep, and the brain folder connection (import, export, re-sync from the remembered folder). See [src/memory/README.md](src/memory/README.md).
 
 The attention engine works end to end in Chromium against a fake model (`npm run test:e2e`): goal from the popup, each page judged against it, drift after the tolerance, badge and nudge, *Take me back* (also when the related tab was closed), *This is for my task* silencing that page next time, and the exported event log. The engine itself is unit-tested in node (`npm test`).
 
@@ -30,7 +48,7 @@ Not done:
 - Replay tests on a recorded real session.
 - The avatar overlay, side panel chat and agent dialogue (plan 2).
 - A real Chrome session on a laptop: real folder picker, real idle and focus events.
-- Agent status from claude.ai/code (`extension/content/claude-code.js` is a stub; DOM unverified).
+- The Muse Code / claude.ai/code session link (later stage; to be built fresh).
 
 ## Brain compatibility
 
@@ -47,12 +65,11 @@ npm test                  # node unit tests
 npm run test:browser      # memory API inside the extension in Chromium; needs Playwright
 npm run test:e2e          # the whole extension against a fake model; needs Playwright
 npm run test:live         # real model call; needs MODEL_API_KEY in the environment
-npm run test:live:audit   # audit scenarios against the real model
 ```
 
 ## Try it
 
-1. `chrome://extensions` → Developer mode → Load unpacked → this folder.
+1. `chrome://extensions` → Developer mode → Load unpacked → the `src/` folder.
 2. Pin the extension, open Settings (from the popup), pick a provider, paste the key, Save, Test connection.
 3. Optional: Connect folder → your second-brain checkout.
 4. Open any web page: Tuck greets you at the top right and asks what you are working on. Browse. About 45 seconds on an unrelated page and Tuck slides in; stay longer and it asks you to come back. The popup has the same controls; the options page exports the event log.

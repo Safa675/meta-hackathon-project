@@ -12,13 +12,13 @@ gates.
 
 | Step | I do | The agent does | Leaves behind |
 |---|---|---|---|
-| 1. Intent | Describe the problem in my own words | Reads `INTENT.md`, asks the questions an analyst would ask | `## Intent` in the plan, linked to `INTENT.md` |
-| 2. Design | Pick the direction, settle the open questions | Maps the architecture and the UI, flags concerns | `## Design`, board links, `DECISIONS.md` entries |
+| 1. Intent | Describe the problem in my own words | Reads `docs/INTENT.md`, asks the questions an analyst would ask | `## Intent` in the plan, linked to `docs/INTENT.md` |
+| 2. Design | Pick the direction, settle the open questions | Maps the architecture and the UI, flags concerns | `## Design`, board links, `docs/DECISIONS.md` entries |
 | 3. Plan | Question the plan until I would hand it to someone else | Reads the code in plan mode, writes the plan and its test plan | `## Plan`, `## Test plan`, `Done when:` |
 | 4. Build | Watch for drift from the plan | Implements, runs the fast checks, fixes its own failures | The diff |
 | 5. Test | Read the evidence, not the summary | Runs the tiers the test plan names, and evals for LLM behavior | Green tiers, an eval report, no unexplained test edits |
 | 6. Review | Judge intent and risk, then merge | Verifies in a fresh context, reviews its own diff, opens the PR | A merged PR, the plan marked done |
-| 7. Learn | Decide what becomes a rule | Writes the rule, the check, or the new test or eval case | `AGENTS.md`, `checks/`, `test/`, `evals/cases/` |
+| 7. Learn | Decide what becomes a rule | Writes the rule, the check, or the new test or eval case | `AGENTS.md`, `checks/`, `test/unit/`, `evals/cases/` |
 
 Small changes skip the plan file: the intent fits in the prompt, and the work
 starts at step 3 in plan mode. They still go through Test. Work that spans
@@ -34,9 +34,9 @@ happened. I design the loops; the agent runs them.
 |---|---|---|---|---|
 | Plan | A new idea, issue, or bug | Someone who never saw the conversation could build from the plan alone | I accept the plan | `docs/plans/` |
 | Build | An accepted plan | Format hook, lint and typecheck from `AGENTS.md` | The plan's steps are implemented | The diff and the plan |
-| Test | The build loop stops | The tiers in `docs/guides/testing.md`; evals against `evals/baseline.json` | The `Done when:` command shows the expected output, and no test was weakened without saying so | `test/`, `evals/reports/` |
+| Test | The build loop stops | The tiers in `docs/guides/testing.md`; evals against `evals/baseline.json` | The `Done when:` command shows the expected output, and no test was weakened without saying so | `test/unit/`, `evals/reports/` |
 | Review | The test loop stops | `verifier` agent, `/code-review` with `docs/guides/review.md`, pre-commit | No open findings, and I approve | The PR thread |
-| Learn | The same mistake twice, or a bug a test or review missed | The new rule, check, or case fails on the old mistake | The next PR does not repeat it | `AGENTS.md`, `checks/`, `test/`, `evals/cases/` |
+| Learn | The same mistake twice, or a bug a test or review missed | The new rule, check, or case fails on the old mistake | The next PR does not repeat it | `AGENTS.md`, `checks/`, `test/unit/`, `evals/cases/` |
 
 A loop that keeps failing its check comes back to me. It does not lower the
 check.
@@ -44,18 +44,18 @@ check.
 ## 1. Intent
 
 Say what is wrong today, who it affects, what better looks like, and what is
-out of scope. No formal language. The agent reads `INTENT.md` first: the
+out of scope. No formal language. The agent reads `docs/INTENT.md` first: the
 change either serves a section of it, or it changes the intent, and then
-`INTENT.md` is updated before the plan. The agent asks about scope, users,
+`docs/INTENT.md` is updated before the plan. The agent asks about scope, users,
 constraints and what success looks like until the idea is concrete. Research
 comes in from GitHub issues on the repo and the design in `docs/superpowers/specs/`.
 
 ## 2. Design
 
-The agent drafts the architecture and the UI against `DESIGN.md` and
-`DECISIONS.md`. Architecture goes on a design doc in `docs/superpowers/specs/`, UI in the browser. The agent lists every place
+The agent drafts the architecture and the UI against `docs/DESIGN.md` and
+`docs/DECISIONS.md`. Architecture goes on a design doc in `docs/superpowers/specs/`, UI in the browser. The agent lists every place
 where it cannot satisfy a rule, or where two rules conflict. I settle those
-before any code exists. A real choice goes into `DECISIONS.md` with its
+before any code exists. A real choice goes into `docs/DECISIONS.md` with its
 reason.
 
 ## 3. Plan
@@ -108,7 +108,7 @@ and who approved it.
   case in `evals/cases/`.
 - An invariant a generic reviewer missed goes into `docs/guides/review.md`.
 - Durable knowledge from a plan moves to `docs/guides/`, and choices move to
-  `DECISIONS.md`.
+  `docs/DECISIONS.md`.
 - A bug found later starts a new intent, so the loop runs again.
 
 ## Plan file template
@@ -119,7 +119,7 @@ and who approved it.
 Status: open
 
 ## Intent
-Serves: INTENT.md § <section>
+Serves: docs/INTENT.md § <section>
 Change: <what this change does, and why now>
 Out of scope: <what this change will not do>
 Open questions: <what is not decided yet>

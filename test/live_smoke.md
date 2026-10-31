@@ -5,7 +5,7 @@ Not part of the automated suite. Run it before recording the demo video.
 
 ## Preconditions
 
-- The extension loaded unpacked in the user's real Chrome from the branch under test.
+- The extension loaded unpacked (the `src/` folder) in the user's real Chrome from the branch under test.
 - A Meta Model API key pasted in the options page; the provider set to
   `meta-contributor` (or `meta` if Contributor is not available).
 - The demo brain (`demo/brain/`) connected from the options page.

@@ -4,12 +4,12 @@
 repos:
   - repo: local
     hooks:
-      - id: slop-check                   # enforces: DESIGN.md baseline bans
-        name: Slop check (DESIGN.md bans)
+      - id: slop-check                   # enforces: docs/DESIGN.md baseline bans
+        name: Slop check (docs/DESIGN.md bans)
         entry: node checks/design/slop-check.mjs
         language: system
         pass_filenames: false            # scans every tracked file: slop/font-pair spans files
-        files: (\.(css|scss|sass|less|pcss|html?|vue|svelte|astro|jsx|tsx|mdx|js|ts|mjs|cjs|json)|^DESIGN\.md)$
+        files: (\.(css|scss|sass|less|pcss|html?|vue|svelte|astro|jsx|tsx|mdx|js|ts|mjs|cjs|json)|^docs/DESIGN\.md)$
 
       # Enable once every {{TOKEN}} in DESIGN.md is filled. The unfilled template
       # fails this on purpose, and a permanently red hook teaches agents to
@@ -18,7 +18,7 @@ repos:
       #
       # - id: design-md-lint
       #   name: DESIGN.md lint (tokens, references, contrast)
-      #   entry: npx --yes @google/design.md@0.4.0 lint DESIGN.md
+      #   entry: npx --yes @google/design.md@0.4.0 lint docs/DESIGN.md
       #   language: system
       #   pass_filenames: false
-      #   files: ^DESIGN\.md$
+      #   files: ^docs/DESIGN\.md$

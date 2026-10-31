@@ -1,0 +1,90 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { relevanceMessages, parseRelevance, classifyRelevance } from "../../../src/agent/relevance.js";
+
+const input = {
+  intent: { title: "Fix the checkout bug in the shop repo", steps: ["Write the failing test"] },
+  url: "https://www.youtube.com/watch?v=abc&t=42",
+  title: "Top 10 F1 crashes of all time",
+};
+const reply = (o) => JSON.stringify(o);
+
+// A fake model: returns the given replies in order and records what it was sent.
+function fakeModel(...replies) {
+  const calls = [];
+  const complete = async (messages, opts) => {
+    calls.push({ messages, opts });
+    const r = replies[calls.length - 1];
+    if (r instanceof Error) throw r;
+    return r;
+  };
+  return { complete, calls };
+}
+
+test("a valid reply is parsed and marked as the model's", async () => {
+  const { complete, calls } = fakeModel(
+    reply({ label: "unrelated", confidence: 0.9, reason: "F1 video, not the bug." }),
+  );
+  const r = await classifyRelevance(complete, input);
+  assert.equal(r.label, "unrelated");
+  assert.equal(r.confidence, 0.9);
+  assert.equal(r.source, "llm");
+  assert.equal(r.retried, false);
+  assert.equal(typeof r.latencyMs, "number");
+  assert.equal(calls[0].opts.temperature, 0);
+});
+
+test("fences and think blocks around the JSON are tolerated", async () => {
+  const { complete } = fakeModel('<think>hmm</think>```json\n{"label":"related","confidence":0.8,"reason":"r"}\n```');
+  assert.equal((await classifyRelevance(complete, input)).label, "related");
+});
+
+test("an invalid reply is retried once with the error", async () => {
+  const { complete, calls } = fakeModel("nope", reply({ label: "related", confidence: 0.7, reason: "r" }));
+  const r = await classifyRelevance(complete, input);
+  assert.equal(r.retried, true);
+  assert.equal(r.label, "related");
+  assert.match(calls[1].messages.at(-1).content, /Your last reply was invalid/);
+});
+
+test("two invalid replies fall back to neutral", async () => {
+  const { complete } = fakeModel("nope", "still nope");
+  const r = await classifyRelevance(complete, input);
+  assert.equal(r.label, "neutral");
+  assert.equal(r.confidence, 0);
+  assert.equal(r.source, "fallback");
+});
+
+test("a failing model call falls back to neutral with the error", async () => {
+  const { complete } = fakeModel(new Error("model call failed: HTTP 429"));
+  const r = await classifyRelevance(complete, input);
+  assert.equal(r.source, "fallback");
+  assert.equal(r.label, "neutral");
+  assert.match(r.error, /429/);
+});
+
+test("parseRelevance names the bad field", () => {
+  assert.throws(() => parseRelevance('{"label":"maybe","confidence":1}'), /label/);
+  assert.throws(() => parseRelevance('{"label":"related","confidence":1.7}'), /confidence/);
+  assert.equal(
+    parseRelevance(reply({ label: "neutral", confidence: 0.2, reason: "x".repeat(500) })).reason.length,
+    200,
+  );
+});
+
+test("the prompt carries the goal, host and title but not the query string", () => {
+  const user = relevanceMessages(input).at(-1).content;
+  assert.match(user, /Fix the checkout bug in the shop repo/);
+  assert.match(user, /youtube\.com/);
+  assert.match(user, /Top 10 F1 crashes of all time/);
+  assert.doesNotMatch(user, /abc|t=42/);
+});
+
+test("the person's own labels are given as examples", () => {
+  const user = relevanceMessages({
+    ...input,
+    examples: [{ host: "figma.com", title: "Demo frames", label: "related" }],
+  }).at(-1).content;
+  assert.match(user, /figma\.com/);
+  assert.match(user, /related/);
+});

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
-const root = path.resolve(import.meta.dirname, "../..");
+const root = path.resolve(import.meta.dirname, "../../src"); // the extension
 const shots = process.env.SCREENSHOT_DIR;
 
 // Two "sites" (different hostnames for the same server) and a fake model that
@@ -68,7 +68,7 @@ const watch = (p) => p.on("pageerror", (e) => errors.push(String(e)));
 // Chrome's idle state is the machine's: the test must not depend on someone typing.
 const settingsPage = await ctx.newPage();
 watch(settingsPage);
-await settingsPage.goto(`${ext}/extension/options/options.html`);
+await settingsPage.goto(`${ext}/options/options.html`);
 await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" });
@@ -113,7 +113,7 @@ await repoTab.waitForTimeout(1500);
 // The popup (opened as a tab) shows the goal set on the page.
 const popup = await ctx.newPage();
 watch(popup);
-await popup.goto(`${ext}/extension/popup/popup.html`);
+await popup.goto(`${ext}/popup/popup.html`);
 await popup.waitForSelector("#intent-view:not([hidden])");
 const intentShown = await popup.textContent("#intent-title");
 

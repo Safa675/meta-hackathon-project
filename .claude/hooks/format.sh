@@ -21,7 +21,7 @@ case "$file" in
   *.js|*.mjs)
     npx --no-install prettier --write "$file" >/dev/null 2>&1 || true
     ;;
-  # UI files: run the slop check so the agent sees DESIGN.md bans while editing,
+  # UI files: run the slop check so the agent sees docs/DESIGN.md bans while editing,
   # not at commit.
   *.css|*.html)
     command -v node >/dev/null 2>&1 || exit 0  # node not installed here

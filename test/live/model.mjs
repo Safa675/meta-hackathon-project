@@ -3,8 +3,8 @@
 //   MODEL_API_KEY   required
 //   MODEL_PROVIDER  meta-contributor (default) | meta | openrouter | ollama | together | fireworks | baseten | groq | nebius
 //   MODEL_BASE_URL, MODEL_ID  optional overrides
-import { modelClient } from "../../memory/model.js";
-import { distillMessages, parseEntries } from "../../memory/distill.js";
+import { modelClient } from "../../src/memory/model.js";
+import { distillMessages, parseEntries } from "../../src/memory/distill.js";
 
 const complete = modelClient({
   provider: process.env.MODEL_PROVIDER ?? "meta-contributor",
@@ -14,7 +14,10 @@ const complete = modelClient({
 });
 const date = new Date().toISOString().slice(0, 10);
 
-console.log("ping:", JSON.stringify(await complete([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 512 })));
+console.log(
+  "ping:",
+  JSON.stringify(await complete([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 512 })),
+);
 
 const messages = distillMessages({
   activityText: [
