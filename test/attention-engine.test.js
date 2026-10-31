@@ -251,3 +251,38 @@ test("one nudge at a time: no fragmentation while a drift is running", () => {
   assert.ok(triggers.some((t) => t.kind === "drift"));
   assert.equal(triggers.filter((t) => t.kind === "fragmentation").length, 0);
 });
+
+test("review I4: one navigation (url, then title, then load) is one page switch", () => {
+  const url = "https://www.youtube.com/watch?v=a";
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, REPO, "related"), CFG);
+  r = step(r.state, ctx(t0 + 100, [url, REPO[1]]), CFG); // new URL, old title
+  r = step(r.state, ctx(t0 + 300, [url, "Top 10 F1 crashes"]), CFG); // the real title
+  r = step(r.state, ctx(t0 + 400, [url, "Top 10 F1 crashes"]), CFG); // load complete
+  assert.equal(r.state.timeline.length, 2);
+  assert.equal(r.state.current.key, relevanceKey(intent.id, url, "Top 10 F1 crashes"));
+});
+
+test("review I5: no goal, no relevance requests", () => {
+  const r = step(initialState(), ctx(t0, VIDEO), CFG);
+  assert.equal(r.out.filter((o) => o.type === "need_relevance").length, 0);
+  assert.deepEqual(r.state.asked, {});
+});
+
+test("review I5: an unanswered relevance request is asked again after 30 s", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, VIDEO), CFG);
+  r = step(r.state, ctx(t0 + 10 * S, REPO, "related"), CFG);
+  r = step(r.state, ctx(t0 + 40 * S, VIDEO), CFG);
+  assert.equal(r.out.filter((o) => o.type === "need_relevance").length, 1);
+});
+
+test("review I6: turning Off back on is not a return from away", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, REPO, "related"), CFG);
+  r = step(r.state, { type: "session", ts: t0 + S, kind: "mode", payload: { mode: "off" } }, CFG);
+  r = step(r.state, { type: "session", ts: t0 + 600 * S, kind: "mode", payload: { mode: "focus" } }, CFG);
+  assert.equal(r.state.away, false);
+  r = step(r.state, ctx(t0 + 601 * S, REPO, "related"), CFG);
+  assert.equal(r.out.filter((o) => o.type === "trigger").length, 0);
+});

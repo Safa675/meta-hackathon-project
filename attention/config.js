@@ -14,6 +14,7 @@ export const DEFAULTS = Object.freeze({
   returnAwaySec: 300,
   maxGapSec: 120, // a longer silence between inputs is time away (sleep, crash)
   breakMin: 5,
+  relevanceRetrySec: 30, // ask the model again if an answer never came (worker died mid-call)
   dayBoundaryHour: 4,
   expireAwayHours: 6,
   retentionDays: 7,

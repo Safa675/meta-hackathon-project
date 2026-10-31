@@ -114,7 +114,12 @@ function applyContext(s, input, candidates, cfg) {
 
   const out = [];
   const pending = !input.label;
-  if (s.current?.key !== input.key) {
+  // A title change or load event on the same tab and URL is the same page, not a switch.
+  const samePage = s.current && s.current.tabId === input.tabId && s.current.url === input.url;
+  if (samePage && s.current.key !== input.key) {
+    const last = s.timeline.at(-1);
+    if (last) Object.assign(last, { key: input.key, label: pending ? "neutral" : input.label });
+  } else if (!samePage) {
     s.timeline.push({ ts: input.ts, key: input.key, label: pending ? "neutral" : input.label });
     // Keep the window, plus the entry running into it.
     const firstIn = s.timeline.findIndex((e) => e.ts >= input.ts - cfg.fragWindowSec * S);
@@ -131,8 +136,9 @@ function applyContext(s, input, candidates, cfg) {
     confidence: pending ? (same?.confidence ?? 0) : (input.confidence ?? 1),
     pending: pending ? (same ? same.pending : true) : false,
   };
-  if (s.current.pending && !s.asked[input.key]) {
-    s.asked[input.key] = true;
+  const askedAt = s.asked[input.key];
+  if (s.intent && s.current.pending && (askedAt == null || input.ts - askedAt >= cfg.relevanceRetrySec * S)) {
+    s.asked[input.key] = input.ts;
     out.push({
       type: "need_relevance",
       ts: input.ts,
@@ -194,8 +200,15 @@ export function step(prev, input, cfg = DEFAULTS) {
   const out = [];
   const candidates = [];
 
+  // Turning Off back on: the time spent off is not time away.
+  const wakingUp = input.type === "session" && input.kind === "mode" && s.mode === "off";
+  if (wakingUp) {
+    s.away = false;
+    s.awaySince = null;
+  }
+
   // 1. Time passes on the page that was in front.
-  if (s.lastTs != null && ts > s.lastTs) {
+  if (s.lastTs != null && ts > s.lastTs && !wakingUp) {
     const dt = (ts - s.lastTs) / S;
     if (dt > cfg.maxGapSec) {
       // Sleep or a crash: the silence is time away, never time on the page.

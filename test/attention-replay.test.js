@@ -32,6 +32,7 @@ const log = {
     // Outputs recorded by an older engine: replay recomputes them and ignores these.
     { type: "trigger", ts: t0 + 61 * S, id: "drift-old", kind: "drift", level: 3 },
     { type: "llm", ts: t0 + 61 * S, node: "classifyRelevance", ok: true },
+    { type: "tick", ts: t0 + 130 * S }, // the live heartbeat, logged
     page(t0 + 200 * S, "https://github.com/acme/shop", "cart.js", "related"),
   ],
 };
@@ -63,5 +64,27 @@ test("replay reports state changes too", () => {
   assert.deepEqual(
     states.map((s) => s.to),
     ["focused", "detour", "drifting", "focused"],
+  );
+});
+
+test("review I3: replay does not tick through a sleep", () => {
+  // 10 s on the video, then the laptop sleeps for 20 minutes.
+  const sleepLog = {
+    events: [
+      log.events[0],
+      page(t0, "https://github.com/acme/shop", "cart.js", "related"),
+      page(t0 + 50 * S, "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes", "unrelated"),
+      page(t0 + 20 * 60 * S, "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes", "unrelated"),
+    ],
+  };
+  const { triggers } = replay(sleepLog);
+  // The engine sees the silence as time away: coming back is a return, not a drift.
+  assert.ok(
+    triggers.some((t) => t.kind === "return"),
+    triggers.map((t) => t.kind).join(" "),
+  );
+  assert.ok(
+    !triggers.some((t) => t.kind === "drift" && t.ts < t0 + 20 * 60 * S),
+    triggers.map((t) => `${t.kind}@${(t.ts - t0) / S}`).join(" "),
   );
 });

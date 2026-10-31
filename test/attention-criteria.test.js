@@ -11,6 +11,7 @@ import { DEFAULTS } from "../attention/config.js";
 
 const dir = path.join(import.meta.dirname, "fixtures");
 const H = 3600 * 1000;
+const WARNINGS = new Set(["drift", "fragmentation"]);
 const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
 const inside = (ts, windows) => windows.some((w) => ts >= w.start && ts <= w.end);
 
@@ -20,7 +21,10 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".log.json"))) {
   const labels = read(`${name}.labels.json`);
 
   test(`${name}: no unfair warnings (≤ 1 L2+ per on-task hour)`, () => {
-    const loud = replay(log).triggers.filter((t) => t.level >= 2 && !t.suppressedBy && inside(t.ts, labels.onTask));
+    // Warnings are drift and fragmentation nudges; return, break_over and session_start are greetings.
+    const loud = replay(log).triggers.filter(
+      (t) => WARNINGS.has(t.kind) && t.level >= 2 && !t.suppressedBy && inside(t.ts, labels.onTask),
+    );
     const hours = labels.onTask.reduce((a, w) => a + (w.end - w.start), 0) / H;
     assert.ok(loud.length <= Math.max(1, hours), `${loud.length} loud triggers in ${hours.toFixed(2)} on-task hours`);
   });
