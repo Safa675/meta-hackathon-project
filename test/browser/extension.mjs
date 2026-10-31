@@ -79,10 +79,28 @@ await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-state");
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
+// Drag Tuck to the left: the bubble then opens rightwards.
+await repoTab.waitForTimeout(600); // the slide-in
+const box = await tuck.locator(".avatar").boundingBox();
+await repoTab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+await repoTab.mouse.down();
+await repoTab.mouse.move(60, 120, { steps: 8 });
+await repoTab.mouse.up();
+const dragged = await tuck.locator(".avatar").boundingBox();
+const bubbleAfterDrag = await tuck.locator(".bubble").boundingBox();
+const formStillOpen = await tuck.locator("input[name=goal]").isVisible();
+if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-dragged-left.png") });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("input[name=step]").fill("Write the failing test");
 await tuck.locator("button.start").click();
 await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
+// Tuck stays, resting; a click is a check-in wave with the goal card.
+await repoTab.waitForTimeout(2500);
+const restState = await tuck.locator("svg.tuck").getAttribute("data-state");
+await tuck.locator(".avatar").click();
+await tuck.locator(".bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
+const clickState = await tuck.locator("svg.tuck").getAttribute("data-state");
+await tuck.locator(".bubble .close").click();
 await repoTab.waitForTimeout(1500);
 
 // The popup (opened as a tab) shows the goal set on the page.
@@ -127,6 +145,7 @@ const onVideo = videoTab.locator("#tuck-companion");
 const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state", { timeout: 5000 });
 await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 10000 });
 const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const videoAvatar = await onVideo.locator(".avatar").boundingBox();
 const cardText = await onVideo.locator(".bubble .text").textContent();
 if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") });
 await onVideo.locator(".bubble button[data-choice=back]").click();
@@ -190,6 +209,12 @@ fs.rmSync(profile, { recursive: true, force: true });
 assert.deepEqual(errors, []);
 assert.equal(greeting, "Hi! What are we working on today?");
 assert.equal(greetState, "checkin");
+assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
+assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
+assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
+assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
+assert.ok(formStillOpen, "a drag is not a click");
+assert.ok(videoAvatar.x < 100, `Tuck remembers where it was put: ${videoAvatar.x}`);
 assert.equal(intentShown, "Fix the checkout bug");
 assert.ok(["welcome", "resting"].includes(firstState), `L1 state: ${firstState}`);
 assert.equal(nudgeState, "thinking");

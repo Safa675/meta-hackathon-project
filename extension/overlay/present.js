@@ -33,7 +33,7 @@ export function nudgeText(t) {
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
 
 // input: {trigger, loops} for an engine trigger, or {event, intent} for
-// "goal_set" | "goal_done" | "resolved" | "card". Returns null when Tuck stays away.
+// "goal_set" | "goal_done" | "resolved" | "presence" | "card". Returns null when Tuck stays away.
 export function present({ trigger, loops = [], event, intent }) {
   if (trigger) {
     if (trigger.level < 1) return null;
@@ -68,14 +68,22 @@ export function present({ trigger, loops = [], event, intent }) {
   }
   switch (event) {
     case "goal_set":
-      return { tuck: "welcome", bubble: { kind: "note", text: "Got it — let's go." }, leaveAfterMs: 2000 };
+      return {
+        tuck: "welcome",
+        settle: "resting",
+        bubble: { kind: "note", text: "Got it — let's go." },
+        closeBubbleAfterMs: 2000,
+      };
     case "goal_done":
       return { tuck: "checkin", bubble: goalForm("Nice! What's next?") };
     case "resolved":
-      return { tuck: "welcome", bubble: null, leaveAfterMs: 2000 };
+      return { tuck: "welcome", settle: "resting", bubble: null };
+    case "presence":
+      // Tuck rests on every page while there is a goal; quiet: no entrance if already there.
+      return { tuck: "resting", bubble: null, quiet: true };
     case "card":
       return intent
-        ? { tuck: "resting", bubble: { kind: "card", text: intent.title, next: intent.steps?.[0] ?? "" } }
+        ? { tuck: "checkin", bubble: { kind: "card", text: intent.title, next: intent.steps?.[0] ?? "" } }
         : { tuck: "checkin", bubble: goalForm("What are we working on?") };
     default:
       return null;

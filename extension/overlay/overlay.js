@@ -1,30 +1,42 @@
 // Tuck on the page: draws what background.js decided (see present.js) inside its own
-// Shadow DOM at the top right. It reads nothing from the page. Injected with
-// chrome.scripting, possibly several times into one page, so it installs once.
+// Shadow DOM. It reads nothing from the page. Top right by default; the person can
+// drag it anywhere and it stays there on every page. The bubble opens toward the
+// roomier side (layout.js, injected first). Injected with chrome.scripting, possibly
+// several times into one page, so it installs once.
 (() => {
   if (window.__tuckInstalled) return;
   window.__tuckInstalled = true;
 
+  const { placement, clamp } = globalThis.tuckLayout;
   const HOST_ID = "tuck-companion";
+  const SIZE = { width: 72, height: 72 };
+  const DRAG_THRESHOLD = 4; // px; less is a click
   let root = null;
-  let leaveTimer = null;
-  let settleTimer = null;
+  let pos = null; // {x, y} of Tuck, in viewport px
   let current = null; // the view on screen
+  let timers = [];
 
   const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
+  const view = () => ({ width: window.innerWidth, height: window.innerHeight });
 
   const STYLE = `
     :host { all: initial; }
-    .dock { position: fixed; top: 16px; right: 16px; z-index: 2147483647; display: flex; flex-direction: column;
-            align-items: flex-end; gap: 8px; font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #24262d;
-            transform: translateX(140%); transition: transform .45s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
-    .dock.in { transform: none; }
-    .avatar { all: unset; cursor: pointer; pointer-events: auto; border-radius: 16px; }
+    .dock { position: fixed; z-index: 2147483647; width: 72px; height: 72px;
+            font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #24262d;
+            opacity: 0; transform: scale(.6); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.8,.2,1);
+            pointer-events: none; }
+    .dock.in { opacity: 1; transform: none; }
+    .avatar { all: unset; cursor: grab; pointer-events: auto; border-radius: 16px; touch-action: none; display: block; }
+    .avatar.dragging { cursor: grabbing; }
     .avatar:focus-visible { outline: 2px solid #94BFAE; outline-offset: 2px; }
     .tuck { --tuck-accent: #94BFAE; width: 72px; height: 72px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
-    .bubble { pointer-events: auto; width: 260px; background: #fff; border: 1px solid #dfe3e8; border-radius: 14px;
-              padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.14); position: relative; }
+    .bubble { pointer-events: auto; position: absolute; width: 260px; background: #fff; border: 1px solid #dfe3e8;
+              border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.14); }
     .bubble[hidden] { display: none; }
+    .dock[data-side="left"] .bubble { right: 0; }
+    .dock[data-side="right"] .bubble { left: 0; }
+    .dock[data-vertical="below"] .bubble { top: 80px; }
+    .dock[data-vertical="above"] .bubble { bottom: 80px; }
     .text { margin: 0 18px 10px 0; font-weight: 600; }
     .next { margin: -6px 0 10px; color: #65616d; font-size: 13px; }
     .row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -53,28 +65,83 @@
     return e;
   }
 
+  const dock = () => root.querySelector(".dock");
+  const art = () => root.querySelector("svg.tuck");
+  const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+
+  // ---- Position ------------------------------------------------------------
+
+  const defaultPos = () => ({ x: window.innerWidth - SIZE.width - 16, y: 16 });
+
+  function place() {
+    pos = clamp(pos ?? defaultPos(), SIZE, view());
+    const d = dock();
+    d.style.left = `${pos.x}px`;
+    d.style.top = `${pos.y}px`;
+    const { side, vertical } = placement({ ...pos, ...SIZE }, view());
+    d.dataset.side = side;
+    d.dataset.vertical = vertical;
+  }
+
+  async function loadPos() {
+    const { tuckPosition } = await chrome.storage.local.get("tuckPosition");
+    if (tuckPosition) pos = tuckPosition;
+  }
+
+  function makeDraggable(avatar) {
+    let start = null;
+    let moved = false;
+    avatar.addEventListener("pointerdown", (e) => {
+      start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+      moved = false;
+      avatar.setPointerCapture(e.pointerId);
+    });
+    avatar.addEventListener("pointermove", (e) => {
+      if (!start) return;
+      const dx = e.clientX - start.px;
+      const dy = e.clientY - start.py;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      moved = true;
+      avatar.classList.add("dragging");
+      pos = { x: start.x + dx, y: start.y + dy };
+      place();
+    });
+    avatar.addEventListener("pointerup", () => {
+      if (!start) return;
+      start = null;
+      avatar.classList.remove("dragging");
+      if (moved) chrome.storage.local.set({ tuckPosition: pos });
+    });
+    // A drag ends with a click event too; only a real click counts.
+    avatar.addEventListener("click", (e) => {
+      if (moved) return ((moved = false), e.preventDefault());
+      if (current?.bubble) closeBubble();
+      else send({ type: "tuck-click" });
+    });
+  }
+
+  // ---- Drawing -------------------------------------------------------------
+
   function ensureRoot({ svg, css }) {
-    if (root?.isConnected) return root;
+    if (root?.isConnected) return;
     const host = el("div", { id: HOST_ID });
     const shadow = host.attachShadow({ mode: "open" });
-    const avatar = el("button", { className: "avatar", ariaLabel: "Open Tuck", title: "Tuck" });
+    const avatar = el("button", { className: "avatar", ariaLabel: "Open Tuck", title: "Tuck — drag to move" });
     avatar.innerHTML = svg;
-    const art = avatar.querySelector("svg");
-    art.setAttribute("aria-hidden", "true");
-    art.removeAttribute("role");
-    art.removeAttribute("aria-label");
-    avatar.onclick = () => (current?.bubble ? hideBubble() : send({ type: "tuck-click" }));
+    const svgEl = avatar.querySelector("svg");
+    svgEl.setAttribute("aria-hidden", "true");
+    svgEl.removeAttribute("role");
+    svgEl.removeAttribute("aria-label");
     const bubble = el("div", { className: "bubble", hidden: true, role: "status", ariaLive: "polite" });
     // Site shortcuts (YouTube's k, Gmail's c) must not fire while typing to Tuck.
     for (const type of ["keydown", "keyup", "keypress"]) bubble.addEventListener(type, (e) => e.stopPropagation());
     shadow.append(el("style", { textContent: css + STYLE }), el("div", { className: "dock" }, avatar, bubble));
     document.documentElement.append(host);
     root = shadow;
-    return root;
+    makeDraggable(avatar);
+    place();
+    window.addEventListener("resize", place);
   }
-
-  const dock = () => root.querySelector(".dock");
-  const art = () => root.querySelector("svg.tuck");
 
   function setState(state) {
     const svg = art();
@@ -84,9 +151,10 @@
       for (const a of part.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) (a.cancel(), a.play());
   }
 
-  function hideBubble() {
+  function closeBubble() {
     root.querySelector(".bubble").hidden = true;
-    current = { ...current, bubble: null };
+    if (current) current = { ...current, bubble: null };
+    setState("resting");
   }
 
   function leave() {
@@ -94,10 +162,9 @@
     current = null;
   }
 
-  function drawBubble(view) {
+  function drawBubble(b) {
     const box = root.querySelector(".bubble");
     box.replaceChildren();
-    const b = view.bubble;
     if (!b) return (box.hidden = true);
     box.hidden = false;
     box.append(el("p", { className: "text", textContent: b.text }));
@@ -144,17 +211,8 @@
       }
       const goal = el("input", { name: "goal", placeholder: "What's the goal?", required: true, maxLength: 120 });
       const step = el("input", { name: "step", placeholder: "First step (optional)", maxLength: 200 });
-      const form = el(
-        "form",
-        {},
-        goal,
-        step,
-        el(
-          "div",
-          { className: "row" },
-          el("button", { className: "b primary start", type: "submit", textContent: "Start" }),
-        ),
-      );
+      const start = el("button", { className: "b primary start", type: "submit", textContent: "Start" });
+      const form = el("form", {}, goal, step, el("div", { className: "row" }, start));
       form.onsubmit = (e) => {
         e.preventDefault();
         const title = goal.value.trim();
@@ -169,25 +227,31 @@
           className: "close",
           ariaLabel: "Close",
           textContent: "×",
-          onclick: () => (b.kind === "nudge" ? send({ type: "respond", choice: "dismiss" }) : leave()),
+          onclick: () => (b.kind === "nudge" ? send({ type: "respond", choice: "dismiss" }) : closeBubble()),
         }),
       );
   }
 
-  function show(view, assets) {
+  async function show(v, assets) {
+    if (!root?.isConnected) await loadPos();
     ensureRoot(assets);
-    clearTimeout(leaveTimer);
-    clearTimeout(settleTimer);
-    current = view;
-    setState(view.tuck);
-    drawBubble(view);
+    // Quiet presence never interrupts what is on screen.
+    if (v.quiet && current) return;
+    timers.forEach(clearTimeout);
+    timers = [];
+    current = v;
+    place();
+    setState(v.tuck);
+    drawBubble(v.bubble);
     requestAnimationFrame(() => dock().classList.add("in"));
-    if (view.settle) settleTimer = setTimeout(() => setState(view.settle), 1400);
-    if (view.leaveAfterMs) leaveTimer = setTimeout(leave, view.leaveAfterMs);
+    if (v.settle) later(1400, () => setState(v.settle));
+    if (v.closeBubbleAfterMs) later(v.closeBubbleAfterMs, closeBubble);
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
     else if (msg?.type === "tuck-hide" && root) leave();
+    else if (msg?.type === "tuck-rest" && root && current)
+      (drawBubble(null), setState("resting"), (current.bubble = null));
   });
 })();
