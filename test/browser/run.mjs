@@ -11,7 +11,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
-const root = path.resolve(import.meta.dirname, "../..");
+const root = path.resolve(import.meta.dirname, "../../src"); // the extension
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-profile-"));
 
 // Extensions need Chromium's new headless mode, passed as a flag.
@@ -27,7 +27,7 @@ const id = new URL(worker.url()).host;
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
-await page.goto(`chrome-extension://${id}/extension/popup/popup.html`);
+await page.goto(`chrome-extension://${id}/popup/popup.html`);
 
 const result = await page.evaluate(async () => {
   const { Memory } = await import("/memory/index.js");
@@ -37,14 +37,32 @@ const result = await page.evaluate(async () => {
     { path: "notes/log/2026/a.md", text: log },
     { path: "notes/topics/shop.md", text: "# Shop\nCheckout lives in the shop repo." },
   ]);
-  const added = await m.add({ kind: "todo", topic: "shop", title: "Fix checkout bug", context: "Cart drops items.", result: "Fix checkout bug", next: "Write the failing test", evidence: "api_key=supersecretvalue1" });
+  const added = await m.add({
+    kind: "todo",
+    topic: "shop",
+    title: "Fix checkout bug",
+    context: "Cart drops items.",
+    result: "Fix checkout bug",
+    next: "Write the failing test",
+    evidence: "api_key=supersecretvalue1",
+  });
   const cons = await m.consolidate();
   const again = await m.consolidate();
   const hits = (await m.recall("checkout")).map((h) => h.title);
   const loops = (await m.openLoops()).map((e) => e.title);
   const { prompt } = await m.contextPack({ title: "Checkout - Shop admin", url: "https://shop.example/checkout" });
   const filed = (await m.recall("checkout bug"))[0].item;
-  return { imported, added: added.status, cons, again, hits, loops, prompt, filedEvidence: filed.evidence, filedStatus: filed.status };
+  return {
+    imported,
+    added: added.status,
+    cons,
+    again,
+    hits,
+    loops,
+    prompt,
+    filedEvidence: filed.evidence,
+    filedStatus: filed.status,
+  };
 });
 
 const memory2 = await page.evaluate(async () => {
@@ -82,13 +100,28 @@ const memory2 = await page.evaluate(async () => {
   await write(brain, ["skills", "ignored.md"], "# not read");
   const m = await Memory.open(); // default DB, shared with the background worker
   const connected = await m.connectBrain(brain);
-  await m.add({ kind: "fact", topic: "shop", title: "Cart drops items on reload", context: "Seen in testing.", result: "Reproduced twice." });
+  await m.add({
+    kind: "fact",
+    topic: "shop",
+    title: "Cart drops items on reload",
+    context: "Seen in testing.",
+    result: "Reproduced twice.",
+  });
   const maintained = await m.maintain();
   const inbox = await brain.getDirectoryHandle("inbox");
   const exportedFiles = [];
   for await (const [name, h] of inbox.entries()) exportedFiles.push({ name, text: await (await h.getFile()).text() });
   const again = await m.exportPending();
-  return { spans: act.spans.length, text: act.text, distilled: distilled.added, cons, connected, maintained, exportedFiles, again };
+  return {
+    spans: act.spans.length,
+    text: act.text,
+    distilled: distilled.added,
+    cons,
+    connected,
+    maintained,
+    exportedFiles,
+    again,
+  };
 });
 
 // Background worker: re-import the brain from the handle stored in IndexedDB.

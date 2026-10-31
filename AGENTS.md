@@ -9,19 +9,20 @@ detours are fine for you. It does not monitor outside the browser, block or lock
 medical advice, or (in v1) read page content beyond URL and title.
 
 **Stack:** JavaScript (plain ES modules, no build step), Chrome MV3, IndexedDB + `chrome.storage`, Meta Model API (OpenAI-compatible); Node 24 + npm for tests
-**Layout:** `attention/` deterministic engine, no Chrome dependency ·
-`agent/` LLM nodes, structured output, no tool calls · `extension/` Chrome glue (background,
-side panel, overlay, options) · `memory/` Safa's, used through the `Memory` API ·
-`evals/` JS eval · `demo/` fake brain + event log · `docs/superpowers/specs/` the design
+**Layout:** `src/` is the extension (Load unpacked → `src/`): `background/` service worker ·
+`attention/` deterministic engine, no Chrome dependency · `agent/` LLM nodes, structured
+output, no tool calls · `tuck/` Tuck on the page · `popup/`, `options/`, `shared/` ·
+`memory/` Safa's, used through the `Memory` API. `test/unit/` mirrors `src/` · `evals/` JS eval ·
+`docs/` intent, decisions, design, guides, specs
 
 ## Commands
 
 | Task | Command |
 |---|---|
 | install | `npm install && npx playwright install chromium` |
-| run locally | `chrome://extensions` → Developer mode → Load unpacked → repo root |
+| run locally | `chrome://extensions` → Developer mode → Load unpacked → `src/` |
 | test — all | `npm test` |
-| test — one | `node --test test/<name>.test.js` |
+| test — one | `node --test test/unit/<area>/<name>.test.js` |
 | test — integration | `npm run test:browser && npm run test:e2e` |
 | test — live | `node --env-file=.env test/live/model.mjs` (real API; only when asked) |
 | eval | `npm run eval` (relevance, real API; `REPS=1` for a quick run) |
@@ -35,14 +36,14 @@ Never invent an invocation. If a command is missing here, ask for it, then add i
 1. **Both errors count: false warnings and missed drifts.** A nagging buddy gets uninstalled; one
    that misses most distractions is useless. Every nudge offers a one-click correction, both
    rates are measured by replay, and feedback tunes them. <!-- enforced by: nothing yet (replay test) -->
-2. **`memory/` is Safa's.** If our code needs a change there, open a GitHub issue for Safa
+2. **`src/memory/` is Safa's.** If our code needs a change there, open a GitHub issue for Safa
    instead of editing it directly.
 3. **Small diffs.** Do not rewrite, reorganize, or reformat code the task did not require.
 4. **No new files as a side effect.** No extra README, summary, or report unless asked.
 
 ## Workflow
 
-- Read `INTENT.md` before a change that touches what the product does. If the
+- Read `docs/INTENT.md` before a change that touches what the product does. If the
   change conflicts with it, say so before writing code.
 - Non-trivial change: follow `docs/guides/workflow.md`. Plan first (`/plan`),
   agree on it, then implement.
@@ -80,11 +81,11 @@ Full procedure: `.agents/skills/commit/SKILL.md`.
 
 | For | Read |
 |---|---|
-| what the product is for and what "working" means | `INTENT.md` |
+| what the product is for and what "working" means | `docs/INTENT.md` |
 | how a change goes from idea to merged PR | `docs/guides/workflow.md` |
-| what was decided or rejected, and why | `DECISIONS.md` |
+| what was decided or rejected, and why | `docs/DECISIONS.md` |
 | test tiers, fixtures, what may be mocked | `docs/guides/testing.md` |
-| visual identity and banned UI patterns — read before any UI work | `DESIGN.md` |
+| visual identity and banned UI patterns — read before any UI work | `docs/DESIGN.md` |
 | the MVP design: attention, agent, UI | `docs/superpowers/specs/2026-10-31-attention-agent-design.md` |
 | plans, open and done | `docs/plans/` |
 
