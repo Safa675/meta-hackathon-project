@@ -5,7 +5,7 @@ description: "Read this skill before making git commits in this repository"
 
 # Commit
 
-Create a git commit for the current changes using Conventional Commits.
+Create a git commit for the current changes in the style of the existing history.
 
 ## Trailers (never)
 
@@ -35,21 +35,17 @@ treat `main` and `master` as protected and say so.
 
 ## Format
 
-`<type>(<scope>): <summary>` — optionally ` [<TASK-ID>]` when the human gave one.
-
-- **type:** `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`,
-  `build`, `ci`, `style`, `revert`
-- **scope:** short area — the module or subsystem touched
-- **summary:** imperative, lowercase, no trailing period
-- **`<TASK-ID>`:** only if the human supplied one. Never invent or chase one;
-  do not ask for an id just to satisfy the convention.
+`<Summary>` — a plain imperative sentence, capitalized, no type prefix, no
+trailing period, as in the existing history ("Add the audit and default to
+Muse Spark 1.3 Contributor"). Optionally ` [<TASK-ID>]` when the human gave one;
+never invent or chase one.
 
 Keep the subject within ~72 characters. If a task id pushes it over, shorten
 the summary first; if it still does not fit, drop the id from the subject and
 put `Fixes: <ID>` in the body.
 
 Body lines wrap at the width set in `AGENTS.md` `## Git`, or 72 if none is
-set. Body is optional.
+set. Body is optional: say why, not what.
 
 ## Branch naming
 
@@ -70,7 +66,7 @@ Single hyphenated segment — **no** `type/description` slashes.
 
 1. Capture any task id or path scope from the prompt.
 2. Review `git status` and `git diff`, scoped to the given paths.
-3. `git log -n 30 --pretty=format:%s` to match existing scope vocabulary.
+3. `git log -n 30 --pretty=format:%s` to match the existing wording.
 4. Check `git branch --show-current`; branch if protected.
 5. If `AGENTS.md` `## Git` names an environment step for hooks (for example
    `source .venv/bin/activate`), run it.
