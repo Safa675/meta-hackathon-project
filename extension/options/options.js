@@ -96,3 +96,30 @@ $("sync").onclick = async () => {
 };
 
 $("brain-status").textContent = await brainStatus(await memory.brainState().catch(() => ({ connected: false })));
+
+// ---- Event log -----------------------------------------------------------
+
+$("export-log").onclick = async () => {
+  const log = await chrome.runtime.sendMessage({ type: "export-log" });
+  const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(blob),
+    download: `attention-log-${new Date().toISOString().slice(0, 10)}.json`,
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $("log-status").textContent = `Exported ${log.events.length} events.`;
+};
+
+$("import-log").onclick = () => $("import-file").click();
+$("import-file").onchange = async () => {
+  const file = $("import-file").files[0];
+  if (!file) return;
+  try {
+    const log = JSON.parse(await file.text());
+    await chrome.runtime.sendMessage({ type: "import-log", log });
+    $("log-status").textContent = `Imported ${log.events?.length ?? 0} events.`;
+  } catch (err) {
+    $("log-status").textContent = `Import failed: ${err.message}`;
+  }
+};
