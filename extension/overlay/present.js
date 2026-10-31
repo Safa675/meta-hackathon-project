@@ -54,7 +54,28 @@ export function present({ trigger, loops = [], event, intent }) {
         triggerId: id,
       };
     }
-    if (level === 1) return { tuck: "welcome", settle: "resting", bubble: null, triggerId: id };
+    // The first word: a visible wave and the message at once. On a page the model is
+    // unsure about, Tuck asks instead, and the answer becomes a label.
+    if (level === 1) {
+      const e = trigger.evidence ?? {};
+      const bubble = e.unsure
+        ? {
+            kind: "nudge",
+            text: `Is ${e.host} part of ${trigger.intentTitle ?? "your goal"}?`,
+            buttons: [
+              { choice: "related", label: "Yes, it's for my task", primary: true },
+              { choice: "back", label: "No, take me back" },
+            ],
+            dismissable: true,
+          }
+        : {
+            kind: "nudge",
+            text: nudgeText(trigger),
+            buttons: [ANSWERS.back, ANSWERS.related, ANSWERS.break],
+            dismissable: true,
+          };
+      return { tuck: "checkin", bubble, triggerId: id };
+    }
     return {
       tuck: "thinking",
       bubble: {

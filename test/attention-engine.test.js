@@ -315,3 +315,11 @@ test("minor 7: break_over stays quiet when the user is already back at work", ()
   const { triggers } = run(inputs, { until: t0 + 10 * S + 5 * 60 * S });
   assert.deepEqual(triggers, []);
 });
+
+test("the trigger says whether the page is unsure", () => {
+  const unsure = ctx(t0, VIDEO, "unrelated", { confidence: 0.4 });
+  const { triggers } = run([setIntent(t0), unsure], { until: t0 + 50 * S });
+  assert.equal(triggers.find((t) => t.kind === "drift").evidence.unsure, true);
+  const sure = run([setIntent(t0), ctx(t0, VIDEO, "unrelated")], { until: t0 + 50 * S });
+  assert.equal(sure.triggers.find((t) => t.kind === "drift").evidence.unsure, false);
+});

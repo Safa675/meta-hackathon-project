@@ -85,6 +85,7 @@ function evidence(s, ts, cfg) {
     budgetSec: Math.round(s.budgetSec),
     switches2m: windowStats(s, ts, cfg).switches,
     lastRelevant: s.lastRelevant,
+    unsure: s.current ? isUnsure(s.current, cfg) : false,
   };
 }
 

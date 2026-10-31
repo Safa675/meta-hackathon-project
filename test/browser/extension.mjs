@@ -66,7 +66,7 @@ await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" });
   await chrome.storage.local.set({
-    attentionConfig: { toleranceSec: 3, escalateAfterSec: 2, fragMinSwitches: 1000, idleAfterSec: 86400 },
+    attentionConfig: { toleranceSec: 3, escalateAfterSec: 4, fragMinSwitches: 1000, idleAfterSec: 86400 },
   });
 }, `http://127.0.0.1:${port}/v1`);
 
@@ -140,10 +140,14 @@ await videoTab.goto(video);
 await videoTab.bringToFront();
 const drift1 = await waitForNewDrift(null);
 const badge = await popup.evaluate(() => chrome.action.getBadgeText({}));
-// Tuck on the video: welcome hop first (L1), then thinking with the bubble (L2).
+// Tuck on the video speaks at the first detection (L1): a check-in wave with the
+// message. Still drifting, it turns to thinking (L2).
 const onVideo = videoTab.locator("#tuck-companion");
-const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state", { timeout: 5000 });
-await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 10000 });
+await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 2500 });
+const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const firstText = await onVideo.locator(".bubble .text").textContent();
+for (let i = 0; i < 40 && (await onVideo.locator("svg.tuck").getAttribute("data-state")) !== "thinking"; i++)
+  await videoTab.waitForTimeout(250);
 const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-state");
 const videoAvatar = await onVideo.locator(".avatar").boundingBox();
 const cardText = await onVideo.locator(".bubble .text").textContent();
@@ -216,7 +220,9 @@ assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwa
 assert.ok(formStillOpen, "a drag is not a click");
 assert.ok(videoAvatar.x < 100, `Tuck remembers where it was put: ${videoAvatar.x}`);
 assert.equal(intentShown, "Fix the checkout bug");
-assert.ok(["welcome", "resting"].includes(firstState), `L1 state: ${firstState}`);
+assert.equal(drift1.level, 1);
+assert.equal(firstState, "checkin", "the first detection is a visible wave");
+assert.match(firstText, /You've been on localhost/, "the first detection already says something");
 assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const videoCalls = calls.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
