@@ -5,13 +5,16 @@
 import { Memory } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
-import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable } from "../attention/relevance.js";
+import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable, isUnsure } from "../attention/relevance.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance } from "../agent/relevance.js";
+import { composeNudge } from "../agent/nudge.js";
+import { siteName } from "./overlay/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
+import { present } from "./overlay/present.js";
 
 const memory = Memory.open();
 const store = openStore();
@@ -106,11 +109,20 @@ async function apply(s, input, cfg) {
     else {
       await log(o);
       if (o.type === "trigger") await showTrigger(o, r.state);
+      // Tuck's words take the model a few seconds: start writing them before they are needed.
+      if (o.type === "state" && o.to === "detour") draftNudge(r.state, 1, cfg);
+      if (o.type === "trigger" && o.kind === "drift" && o.level >= 1 && !o.suppressedBy)
+        draftNudge(r.state, o.level + 1, cfg);
       if (o.type === "state" && ["focused", "no_intent", "paused"].includes(o.to)) await setBadge(null);
       // Back on a work page before answering (a new tab or a search is not back yet).
       const backAtWork = o.type === "state" && o.to === "focused" && r.state.current?.label === "related";
       if (backAtWork && ["detour", "drifting"].includes(o.from)) await selfReturn(o.ts);
     }
+  }
+  if (input.type === "context") await presence(s, r.state, input);
+  if (input.type === "context" && !r.state.intent && !["dnd", "off"].includes(r.state.mode)) {
+    const { pendingGreeting } = await chrome.storage.session.get("pendingGreeting");
+    if (pendingGreeting) await greet(input.tabId);
   }
   scheduleWake(r.state, cfg);
   return r;
@@ -276,8 +288,127 @@ async function setBadge(kind) {
 // Level 0 (do not disturb) is logged only; everything else is shown.
 async function showTrigger(t, s) {
   if (t.level < 1) return;
-  await chrome.storage.local.set({ lastTrigger: { ...t, intentTitle: s.intent?.title ?? null } });
+  const intent = await (await store).activeIntent();
+  const shown = {
+    ...t,
+    intentTitle: s.intent?.title ?? null,
+    intentStep: intent?.steps?.[0] ?? null,
+    message: await draftFor(t, s),
+  };
+  await chrome.storage.local.set({ lastTrigger: shown });
   await setBadge(t.level >= 2 ? "loud" : "look");
+  if (t.kind === "session_start") return greet(s.current?.tabId);
+  await showTuck(s.current?.tabId, present({ trigger: shown }));
+}
+
+// ---- Tuck's words (LLM#4) ------------------------------------------------
+
+// Writes the line for the nudge at `level` on the page in front, ahead of time.
+// Outside the queue; a failure leaves the template.
+function draftNudge(s, level, cfg) {
+  writeDraft(s, level, cfg).catch((err) =>
+    log({ type: "llm", ts: Date.now(), node: "composeNudge", ok: false, error: String(err) }),
+  );
+}
+
+async function writeDraft(s, level, cfg) {
+  if (!s.intent || !s.current || level > 3) return;
+  const settings = await loadModelSettings();
+  if (!settings) return;
+  const intent = await (await store).activeIntent();
+  const unsure = isUnsure(s.current, cfg);
+  // Minutes away when that nudge comes: the tolerance, plus one escalation per level after the first.
+  const awayMs =
+    (s.offTaskSince ? Date.now() - s.offTaskSince : 0) +
+    (level === 1 ? cfg.toleranceSec * 1000 : cfg.escalateAfterSec * 1000);
+  const r = await composeNudge(modelClient(settings), {
+    kind: "drift",
+    level,
+    site: siteName(s.current.host),
+    awayMin: Math.round(awayMs / 60000),
+    unsure,
+    task: { title: intent?.title ?? s.intent.title, step: intent?.steps?.[0] },
+    lastWork: s.lastRelevant?.title,
+    hour: new Date().getHours(),
+  });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "composeNudge",
+    model: settings.model ?? settings.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: r.source === "llm",
+    ...(r.error && { error: r.error }),
+    ...(r.message && { message: r.message }),
+  });
+  if (r.message)
+    await chrome.storage.session.set({ nudgeDraft: { key: s.current.key, level, unsure, message: r.message } });
+}
+
+// The drafted line, if it was written for this very nudge.
+async function draftFor(t, s) {
+  if (t.kind !== "drift") return null;
+  const { nudgeDraft: d } = await chrome.storage.session.get("nudgeDraft");
+  const unsure = !!t.evidence?.unsure;
+  return d && d.key === s.current?.key && d.level === t.level && d.unsure === unsure ? d.message : null;
+}
+
+// ---- Tuck on the page ----------------------------------------------------
+
+let tuckAssets = null;
+async function assets() {
+  tuckAssets ??= {
+    svg: await (await fetch(chrome.runtime.getURL("extension/tuck/tuck.svg"))).text(),
+    css: await (await fetch(chrome.runtime.getURL("extension/tuck/tuck.css"))).text(),
+  };
+  return tuckAssets;
+}
+
+// Draw a view (present.js) in a tab. False when Chrome does not allow it there
+// (chrome:// pages, the Web Store, this extension's own pages).
+async function showTuck(tabId, view) {
+  if (tabId == null || !view) return false;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["extension/overlay/layout.js", "extension/overlay/overlay.js"],
+    });
+    await chrome.tabs.sendMessage(tabId, { type: "tuck-show", view, assets: await assets() });
+    await chrome.storage.session.set({ tuckTab: tabId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function hideTuck(type = "tuck-hide") {
+  const { tuckTab } = await chrome.storage.session.get("tuckTab");
+  if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type }).catch(() => {});
+}
+// Close the bubble and settle back to resting, staying on the page.
+const restTuck = () => hideTuck("tuck-rest");
+
+// While there is a goal, Tuck rests on every page (not on a break, paused or off).
+async function presence(prev, s, input) {
+  const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+  if (!changed || !s.current?.url) return;
+  const away = ["break", "paused"].includes(s.state);
+  if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
+  else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
+}
+
+// The day's greeting with the goal form. If the first page cannot hold Tuck (a new
+// tab, settings), the greeting waits for the next page that can.
+async function greet(tabId) {
+  const st = await store;
+  const expired = await st.latestIntent();
+  const loops = [
+    ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
+    ...(await (await memory).openLoops()).map((e) => ({ title: e.title })),
+  ];
+  const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
+  const shown = await showTuck(tabId, view);
+  await chrome.storage.session.set({ pendingGreeting: !shown });
 }
 
 async function respond({ choice }) {
@@ -298,6 +429,9 @@ async function respond({ choice }) {
     });
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
     await setBadge(null);
+    if (choice === "related") await showTuck(before.current?.tabId, present({ event: "resolved" }));
+    else if (choice === "break") await hideTuck();
+    else await restTuck();
     if (choice === "back") await takeMeBack(s.lastRelevant);
     if (choice === "related" && page?.host && before.intent) await markRelated(page, before.intent, ts);
     return { ok: true };
@@ -309,6 +443,8 @@ async function selfReturn(ts) {
   const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
   if (!lastTrigger || lastTrigger.respondedAt || lastTrigger.resolvedAt) return;
   await chrome.storage.local.set({ lastTrigger: { ...lastTrigger, resolvedAt: ts, resolvedBy: "self" } });
+  await restTuck();
+  await showTuck((await loadEngine()).current?.tabId, present({ event: "resolved" }));
   await log({
     type: "feedback",
     ts,
@@ -349,7 +485,7 @@ async function markRelated(page, intent, ts) {
 
 // ---- Goals and modes -----------------------------------------------------
 
-async function setIntent({ title, next }) {
+async function setIntent({ title, next, from }, sender) {
   return enqueue(async () => {
     const st = await store;
     const previous = await st.activeIntent();
@@ -363,6 +499,8 @@ async function setIntent({ title, next }) {
       kind: "intent_set",
       payload: { id: intent.id, title, topic: intent.topic },
     });
+    await chrome.storage.session.set({ pendingGreeting: false });
+    if (from === "tuck") await showTuck(sender?.tab?.id, present({ event: "goal_set" }));
     return intent;
   });
 }
@@ -375,6 +513,8 @@ async function completeIntent() {
     if (intent.memoryEntryId) await (await memory).completeIntent(intent.memoryEntryId).catch(() => {});
     await st.putIntent({ ...intent, doneAt: Date.now() });
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
+    // Tuck asks what's next, on the page in front.
+    await showTuck((await loadEngine()).current?.tabId, present({ event: "goal_done" }));
     return intent;
   });
 }
@@ -382,6 +522,7 @@ async function completeIntent() {
 const setMode = ({ mode }) =>
   enqueue(async () => {
     await chrome.storage.local.set({ mode });
+    if (mode === "dnd" || mode === "off") await hideTuck();
     return process({ type: "session", ts: Date.now(), kind: "mode", payload: { mode } });
   });
 
@@ -422,15 +563,19 @@ const HANDLERS = {
   "export-log": async () => (await store).exportLog(),
   "import-log": async ({ log }) => (await store).importLog(log),
   "record-active": () => sense(activeTab),
+  // Clicking Tuck with no nudge: the goal card (or the goal form when there is none).
+  "tuck-click": async (_msg, sender) =>
+    showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
+  "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
   "sync-brain": () => memory.then((m) => m.syncBrain()),
 };
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const handler = HANDLERS[msg?.type];
   if (!handler) return;
   Promise.resolve()
-    .then(() => handler(msg))
+    .then(() => handler(msg, sender))
     .then(reply, (err) => reply({ error: String(err) }));
   return true; // async reply
 });

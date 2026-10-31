@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Focus (Meta Hackathon Project)",
+  "name": "Tuck — focus companion",
   "version": "0.0.1",
-  "description": "A focus agent that knows what you meant to do and notices when you drift.",
+  "description": "A little folded companion that knows what you meant to do and notices when you drift.",
   "permissions": [
     "storage",
     "tabs",
     "alarms",
     "idle",
-    "notifications"
+    "notifications",
+    "scripting"
   ],
   "host_permissions": [
+    "<all_urls>",
     "https://claude.ai/code/*",
     "https://api.meta.ai/*",
     "https://api.together.xyz/*",

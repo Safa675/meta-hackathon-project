@@ -1,0 +1,38 @@
+/* Tuck v2. Inline SVG; state remains visually distinct after its entrance.
+   All animations are finite except the resting blink. */
+.tuck{--tuck-body:#9A8AB5;--tuck-shadow:#786890;--tuck-highlight:#B5A5CE;--tuck-eyes:#292832;--tuck-accent:#D6AC70;display:block;width:64px;height:64px;overflow:visible;color:var(--tuck-accent)}
+.tuck .tuck__body{transform-origin:140px 218px;transition:transform .7s ease}
+.tuck .tuck__flap{transform-origin:170px 153px;transition:transform .85s cubic-bezier(.4,0,.2,1)}
+.tuck .tuck__face{transition:transform .5s ease}
+.tuck .tuck__eyes{transform-origin:114px 168px}
+.tuck .tuck__closed,.tuck .tuck__smile,.tuck .tuck__effects>g{opacity:0;transition:opacity .35s ease}
+.tuck[data-state="resting"] .tuck__eyes{animation:tuck-blink 9s linear infinite}
+.tuck[data-state="thinking"] .tuck__body{transform:rotate(-7deg)}
+.tuck[data-state="thinking"] .tuck__face{transform:translate(5px,-6px)}
+.tuck[data-state="thinking"] .tuck__thought{opacity:1;animation:tuck-arrive .8s ease both}
+.tuck[data-state="thinking"] .tuck__flap{transform:rotate(8deg)}
+.tuck[data-state="checkin"] .tuck__body{transform:rotate(-6deg) translateY(-3px)}
+.tuck[data-state="checkin"] .tuck__face{transform:translate(3px,-3px)}
+.tuck[data-state="checkin"] .tuck__flap{transform:rotate(14deg);animation:tuck-wave 1.8s ease-in-out 1}
+.tuck[data-state="checkin"] .tuck__greeting{opacity:1;animation:tuck-pop 1.2s ease both}
+.tuck[data-state="checkin"] .tuck__smile{opacity:1}
+.tuck[data-state="welcome"] .tuck__body{animation:tuck-hop 1.1s ease 1}
+.tuck[data-state="welcome"] .tuck__eyes{opacity:0}
+.tuck[data-state="welcome"] .tuck__closed,.tuck[data-state="welcome"] .tuck__smile{opacity:1}
+.tuck[data-state="welcome"] .tuck__sparkles{opacity:1;animation:tuck-pop 1.1s ease both}
+/* Reflection about the crease from (126,111) to (214,194).
+   This folds the tall paper tip down across the diagonal, rather than
+   compressing the whole silhouette. CSS matrix leaves the crease fixed. */
+.tuck[data-state="sleeping"] .tuck__flap{transform-origin:0 0;transform:matrix(.05843,.99829,.99829,-.05843,7.831,-8.303)}
+.tuck[data-state="sleeping"] .tuck__body{transform:translateY(5px) rotate(3deg)}
+.tuck[data-state="sleeping"] .tuck__feet{opacity:.35}
+.tuck[data-state="sleeping"] .tuck__eyes{opacity:0}
+.tuck[data-state="sleeping"] .tuck__closed,.tuck[data-state="sleeping"] .tuck__sleep-effects{opacity:1}
+.tuck[data-state="sleeping"] .tuck__sleep-effects{animation:tuck-arrive 1.3s ease both}
+@keyframes tuck-blink{0%,46%,49%,100%{transform:scaleY(1)}47%,48%{transform:scaleY(.08)}}
+@keyframes tuck-wave{0%{transform:rotate(0)}25%{transform:rotate(19deg)}45%{transform:rotate(3deg)}65%{transform:rotate(19deg)}85%,100%{transform:rotate(14deg)}}
+@keyframes tuck-hop{0%,100%{transform:translateY(0)}20%{transform:translateY(3px) scale(1.03,.96)}48%{transform:translateY(-12px) rotate(-4deg)}75%{transform:translateY(0) scale(1.02,.97)}}
+@keyframes tuck-pop{0%{opacity:0;transform:translateY(9px)}50%{opacity:1;transform:translateY(-3px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes tuck-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.tuck[data-motion="off"],.tuck[data-motion="off"] *{animation:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce){.tuck,.tuck *{animation:none!important;transition:none!important}}
