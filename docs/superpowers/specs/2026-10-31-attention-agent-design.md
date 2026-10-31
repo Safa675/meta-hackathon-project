@@ -116,7 +116,7 @@ Attention is "the senses and the reflex": it runs every second and is determinis
 **Relevance**
 - Key: `intentId + host + normalize(title)` (on sites like YouTube the title is essential; on most sites the host may be enough — the builder decides normalisation).
 - Order: (1) user labels (2) cache (3) LLM#1. While the LLM answer is pending, the page counts as **neutral**.
-- Result: `related | unrelated | neutral` + `confidence`. A low-confidence `unrelated` (threshold is the builder's, start at 0.6) behaves as neutral — anti-goal: unfair warnings.
+- Result: `related | unrelated | neutral` + `confidence`. A low-confidence `unrelated` (threshold is the builder's, start at 0.6) is **unsure**: it never escalates past L1 (the avatar only looks, no text, no LLM), so the user can react without being nagged. Both errors count (INTENT.md): unsure pages are neither silent nor nagging.
 - Neutral covers in-between stops: search engines, new tab, calendar, the extension itself.
 
 **Drift budget**
@@ -186,7 +186,7 @@ trigger    {ts, id, type, level, evidence, suppressedBy?}
 response   {ts, triggerId, choice, latencyMs}
 llm        {ts, node, model, inputTokens, outputTokens, latencyMs, ok, error?}
 session    {ts, kind: start|end|intent_set|intent_done|mode, payload}
-feedback   {ts, kind: label|tolerance, payload}
+feedback   {ts, kind: label|tolerance|missed_drift, payload}
 ```
 
 - Metrics (focus share, drift count, time to return, intervention acceptance rate, most-drifted sites, drift by hour) are **computed, not stored**.
@@ -212,6 +212,7 @@ Labels and tolerance live in the hot layer in attention's DB (fast, read every s
 - **Avatar overlay (content script, Shadow DOM):** injected into the active tab with `chrome.scripting`; small, in a page corner, draggable, minimisable. State animations: `idle`, `watching`, `curious` (L1), `talking` (L2/L3 bubble), `celebrating` (goal done / came back), `sleeping` (Do Not Disturb / break). SVG + CSS animation. On pages that cannot be injected (`chrome://`, Web Store) it falls back to the side panel + badge.
 - **Bubble:** next to the avatar; message + up to 3 buttons + *Talk to me* (opens the side panel; see §9.3). Never modal.
 - **Side panel (replaces the popup; opens on the extension icon):** active goal and steps at the top (*Done* button), mode selector (4 modes), chat history and input, today's summary (focus time, drift count, time to return — computed from the log).
+- **"You missed one" button (side panel):** the user flags a drift the companion did not catch. It logs a `feedback {kind: "missed_drift", windowStart, windowEnd}` event covering the last few minutes (builder: ~5 min), which replay and tuning use as a labelled miss. The avatar answers warmly and offers the goal. Working label; the wording may change later.
 - **Options page:** the existing model/key settings + brain folder connection (already in the repo) + export/import of the event log + reset.
 - `chrome.notifications` only as a fallback, e.g. break over while the browser is unfocused.
 - **The avatar's visual identity is not designed yet.** Inspired by the simplicity and cuteness of the Claude icon, but a different shape. The visual design happens in a separate session with mockups; meanwhile the builder uses a simple placeholder SVG character (with working state animations).
