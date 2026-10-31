@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { auditMessages, parseVerdict, runAudit, VERDICTS } from "../agent/audit.js";
 
 test("prompt carries activity and memory context; asks for JSON", () => {
-  const [sys, user] = auditMessages({ activityText: "Last 30 min: youtube.com 25 min", contextPrompt: "Stated intent: Fix checkout bug", now: new Date("2026-10-30T10:00:00Z") });
+  const [sys, user] = auditMessages({
+    activityText: "Last 30 min: youtube.com 25 min",
+    contextPrompt: "Stated intent: Fix checkout bug",
+    now: new Date("2026-10-30T10:00:00Z"),
+  });
   assert.match(sys.content, /one JSON object only/);
   assert.match(sys.content, /No medical or mental-health advice/);
   assert.match(user.content, /Now: 2026-10-30T10:00:00.000Z/);
@@ -12,8 +16,15 @@ test("prompt carries activity and memory context; asks for JSON", () => {
 });
 
 test("parses a verdict through reasoning blocks and fences", () => {
-  const v = parseVerdict('<think>hmm</think>```json\n{"verdict":"drifting","confidence":0.8,"reason":"25 min on youtube.com","nudge":"Back to the failing test?"}\n```');
-  assert.deepEqual(v, { verdict: "drifting", confidence: 0.8, reason: "25 min on youtube.com", nudge: "Back to the failing test?" });
+  const v = parseVerdict(
+    '<think>hmm</think>```json\n{"verdict":"drifting","confidence":0.8,"reason":"25 min on youtube.com","nudge":"Back to the failing test?"}\n```',
+  );
+  assert.deepEqual(v, {
+    verdict: "drifting",
+    confidence: 0.8,
+    reason: "25 min on youtube.com",
+    nudge: "Back to the failing test?",
+  });
 });
 
 test("unknown verdicts become unclear; confidence is clamped; on_track has no nudge", () => {
@@ -29,7 +40,10 @@ test("a reply without JSON is an error", () => {
 
 // Minimal stand-in for Memory: the audit only reads through these methods.
 const fakeMemory = ({ spans, intent }) => ({
-  activity: async () => ({ spans, text: spans.length ? "Last 30 min: youtube.com 25 min" : "Last 30 min: no browser activity." }),
+  activity: async () => ({
+    spans,
+    text: spans.length ? "Last 30 min: youtube.com 25 min" : "Last 30 min: no browser activity.",
+  }),
   latestIntent: async () => intent,
   contextPack: async () => ({ prompt: "Stated intent: Fix checkout bug" }),
 });
@@ -43,7 +57,10 @@ test("no activity or no intent: no model call", async () => {
 });
 
 test("with activity and intent, the model's verdict comes back with context", async () => {
-  const mem = fakeMemory({ spans: [{ title: "Lofi", url: "https://youtube.com/w" }], intent: { title: "Fix checkout bug" } });
+  const mem = fakeMemory({
+    spans: [{ title: "Lofi", url: "https://youtube.com/w" }],
+    intent: { title: "Fix checkout bug" },
+  });
   const a = await runAudit(mem, async (messages) => {
     assert.match(messages[1].content, /youtube\.com 25 min/);
     return '{"verdict":"drifting","confidence":0.9,"reason":"25 min on youtube.com","nudge":"Write the failing test?"}';

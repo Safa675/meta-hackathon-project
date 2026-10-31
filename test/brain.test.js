@@ -58,7 +58,10 @@ test("loads log, inbox and free-form notes; skips _done, README and bad files", 
   assert.equal(entries.length, 2);
   assert.equal(entries[0].date, "2026-10-14"); // newest first
   assert.equal(documents.length, 2); // nothing excluded by topic or folder
-  assert.deepEqual(skipped.map((s) => s.path), ["inbox/broken.md"]);
+  assert.deepEqual(
+    skipped.map((s) => s.path),
+    ["inbox/broken.md"],
+  );
 });
 
 test("the same entry in inbox and log is counted once", () => {
@@ -66,8 +69,14 @@ test("the same entry in inbox and log is counted once", () => {
     .replace("Email the vendor", "Pick a vendor for the widget")
     .replace("2026-10-14", "2026-10-13");
   for (const files of [
-    [{ path: "notes/log/2026/a.md", text: logNote }, { path: "inbox/a.md", text: pendingCopy }],
-    [{ path: "inbox/a.md", text: pendingCopy }, { path: "notes/log/2026/a.md", text: logNote }],
+    [
+      { path: "notes/log/2026/a.md", text: logNote },
+      { path: "inbox/a.md", text: pendingCopy },
+    ],
+    [
+      { path: "inbox/a.md", text: pendingCopy },
+      { path: "notes/log/2026/a.md", text: logNote },
+    ],
   ]) {
     const { entries } = loadBrain(files);
     assert.equal(entries.length, 1);
@@ -80,5 +89,8 @@ test("open loops are entries with a next action", () => {
     { path: "notes/log/2026/a.md", text: logNote },
     { path: "inbox/b.md", text: inboxNote },
   ]);
-  assert.deepEqual(openLoops(entries).map((e) => e.title), ["Pick a vendor for the widget"]);
+  assert.deepEqual(
+    openLoops(entries).map((e) => e.title),
+    ["Pick a vendor for the widget"],
+  );
 });

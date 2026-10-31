@@ -1,0 +1,55 @@
+---
+# Copy to .pre-commit-config.yaml in the project root, then:
+#   pre-commit install --hook-type pre-commit --hook-type commit-msg
+#
+# The lint and format hooks call the project's own scripts, so the versions
+# are the ones in package.json. Point them at your scripts, then delete what
+# does not apply.
+
+default_stages: [pre-commit]
+
+repos:
+  # --- minimal core -------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch          # enforces: never commit on protected branches
+        args: [--branch, main, --branch, master]
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: lint
+        name: Lint ({{npm run lint}})
+        entry: {{npm run lint --}}
+        language: system
+        pass_filenames: false
+        types_or: [javascript, jsx, ts, tsx]
+
+      - id: typecheck
+        name: Typecheck ({{npx tsc --noEmit}})
+        entry: {{npx tsc --noEmit}}
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]
+
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    rev: v9.25.0
+    hooks:
+      - id: commitlint                   # enforces: Conventional Commits
+        stages: [commit-msg]
+        additional_dependencies: ['@commitlint/config-conventional']
+
+  # --- full setup: uncomment as the project earns them --------------------
+  #
+  # - repo: local
+  #   hooks:
+  #     - id: tests
+  #       name: Tests
+  #       entry: {{npm test --}}
+  #       language: system
+  #       pass_filenames: false

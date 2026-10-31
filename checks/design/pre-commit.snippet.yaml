@@ -1,0 +1,24 @@
+# Design checks. Merge these hooks into the project's .pre-commit-config.yaml.
+# Needs Node 18+ on PATH.
+
+repos:
+  - repo: local
+    hooks:
+      - id: slop-check                   # enforces: DESIGN.md baseline bans
+        name: Slop check (DESIGN.md bans)
+        entry: node checks/design/slop-check.mjs
+        language: system
+        pass_filenames: false            # scans every tracked file: slop/font-pair spans files
+        files: (\.(css|scss|sass|less|pcss|html?|vue|svelte|astro|jsx|tsx|mdx|js|ts|mjs|cjs|json)|^DESIGN\.md)$
+
+      # Enable once every {{TOKEN}} in DESIGN.md is filled. The unfilled template
+      # fails this on purpose, and a permanently red hook teaches agents to
+      # bypass the whole suite. Contrast findings are warnings: they print, but
+      # do not fail the commit.
+      #
+      # - id: design-md-lint
+      #   name: DESIGN.md lint (tokens, references, contrast)
+      #   entry: npx --yes @google/design.md@0.4.0 lint DESIGN.md
+      #   language: system
+      #   pass_filenames: false
+      #   files: ^DESIGN\.md$

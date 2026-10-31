@@ -55,8 +55,11 @@ $("test").onclick = async () => {
   $("model-status").textContent = "Testing…";
   const t = performance.now();
   try {
-    const reply = await modelClient(current())([{ role: "user", content: "Reply with exactly: pong" }], { maxTokens: 512 });
-    $("model-status").textContent = `Connected in ${((performance.now() - t) / 1000).toFixed(1)} s. Reply: ${reply.trim().slice(0, 60)}`;
+    const reply = await modelClient(current())([{ role: "user", content: "Reply with exactly: pong" }], {
+      maxTokens: 512,
+    });
+    $("model-status").textContent =
+      `Connected in ${((performance.now() - t) / 1000).toFixed(1)} s. Reply: ${reply.trim().slice(0, 60)}`;
   } catch (err) {
     $("model-status").textContent = `Failed: ${err.message}`;
   }
@@ -96,3 +99,53 @@ $("sync").onclick = async () => {
 };
 
 $("brain-status").textContent = await brainStatus(await memory.brainState().catch(() => ({ connected: false })));
+
+// ---- Event log -----------------------------------------------------------
+
+$("export-log").onclick = async () => {
+  const log = await chrome.runtime.sendMessage({ type: "export-log" });
+  const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(blob),
+    download: `attention-log-${new Date().toISOString().slice(0, 10)}.json`,
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $("log-status").textContent = `Exported ${log.events.length} events.`;
+};
+
+// Importing replaces the current log, so it takes a second click to confirm.
+let pendingLog = null;
+$("import-log").onclick = async () => {
+  if (!pendingLog) return $("import-file").click();
+  try {
+    await chrome.runtime.sendMessage({ type: "import-log", log: pendingLog });
+    $("log-status").textContent = `Imported ${pendingLog.events?.length ?? 0} events.`;
+  } finally {
+    pendingLog = null;
+    $("import-log").textContent = "Import event log";
+    $("cancel-import").hidden = true;
+  }
+};
+$("import-file").onchange = async () => {
+  const file = $("import-file").files[0];
+  $("import-file").value = "";
+  if (!file) return;
+  try {
+    pendingLog = JSON.parse(await file.text());
+    const { events } = await chrome.runtime.sendMessage({ type: "export-log" });
+    $("log-status").textContent =
+      `This replaces your current log (${events.length} events) with ${pendingLog.events?.length ?? 0} events from ${file.name}. Export first if you want to keep it.`;
+    $("import-log").textContent = "Replace my log";
+    $("cancel-import").hidden = false;
+  } catch (err) {
+    pendingLog = null;
+    $("log-status").textContent = `Import failed: ${err.message}`;
+  }
+};
+$("cancel-import").onclick = () => {
+  pendingLog = null;
+  $("import-log").textContent = "Import event log";
+  $("cancel-import").hidden = true;
+  $("log-status").textContent = "";
+};

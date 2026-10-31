@@ -5,7 +5,15 @@ import { contextPack } from "../memory/context.js";
 
 // Synthetic: a personal entry that shares words with the work project's name.
 const e = (id, topic, title, next = "Do the next thing") => ({
-  id, kind: "fact", topic, title, date: "2026-10-20", context: "Context.", result: "Result.", evidence: "none", next,
+  id,
+  kind: "fact",
+  topic,
+  title,
+  date: "2026-10-20",
+  context: "Context.",
+  result: "Result.",
+  evidence: "none",
+  next,
 });
 const entries = [
   e("p1", "personal", "Dinner with my Garden Club teammate after the garden club meetup"),
@@ -52,6 +60,9 @@ test("hostnames reduce to their name; URL debris is not a search word", () => {
 });
 
 test("context pack uses the topic ranking", () => {
-  const pack = contextPack(index, entries, { title: "garden-club-site: Pull requests", url: "https://github.com/x/garden-club-site" });
+  const pack = contextPack(index, entries, {
+    title: "garden-club-site: Pull requests",
+    url: "https://github.com/x/garden-club-site",
+  });
   assert.equal(pack.openLoops[0].topic, "garden-club");
 });

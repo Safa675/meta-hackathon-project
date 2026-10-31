@@ -9,8 +9,10 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 | Folder | Owner | What |
 |---|---|---|
 | `memory/` | Safa | Memory: entries, consolidation, recall, context pack, brain folder connector. See [memory/README.md](memory/README.md) |
-| `agent/` | Safa | The audit: stated intent and open loops vs. recent activity → verdict and nudge. See [agent/README.md](agent/README.md) |
-| `extension/` | İrem (first version by Safa) | Background worker (tab capture, audit every 5 min, drift notification and badge, hourly distill, upkeep), popup, settings page |
+| `attention/` | İrem | The attention engine: a pure reducer over browsing events: relevance keys, drift budget, states, triggers, intervention policy, shadow goals, event log store |
+| `agent/` | İrem (audit by Safa) | LLM nodes with structured output: `relevance.js` judges one page against the goal. `audit.js` is Safa's earlier audit, kept as reference and not wired |
+| `evals/` | İrem | `npm run eval`: relevance accuracy against the real model |
+| `extension/` | İrem (first version by Safa) | Background worker (Chrome events → engine → event log, relevance calls, badge, hourly distill, upkeep), popup (goal, state, nudge with *Take me back* / *This is for my task* / *5-min break*, mode), settings page (model, brain, event log export/import) |
 | `manifest.json` | İrem | At the root so Chrome can load both folders |
 | `test/` | both | `npm test` (node), `npm run test:browser` (real Chromium) |
 
@@ -18,10 +20,14 @@ Built during the Meta AI developer hackathon. Design inspired by a private perso
 
 Memory is complete and tested (node and real Chromium): entries, consolidation, topic-aware recall, context pack, activity log, distill, scheduled upkeep, and the brain folder connection (import, export, re-sync from the remembered folder). See [memory/README.md](memory/README.md).
 
-The extension works end to end in Chromium against a fake model (`npm run test:e2e`): tab capture, intent from the popup, "Check now", drift verdict and badge, the audit timer's notification, and "Done".
+The attention engine works end to end in Chromium against a fake model (`npm run test:e2e`): goal from the popup, each page judged against it, drift after the tolerance, badge and nudge, *Take me back* (also when the related tab was closed), *This is for my task* silencing that page next time, and the exported event log. The engine itself is unit-tested in node (`npm test`).
+
+**Privacy:** the companion sees page URLs and titles only. It never reads page content or takes screenshots. The event log stays on this device for 7 days.
 
 Not done:
-- Runs against the real model: `npm run test:live:audit`.
+- The relevance eval against the real model (`npm run eval`) and its baseline.
+- Replay tests on a recorded real session.
+- The avatar overlay, side panel chat and agent dialogue (plan 2).
 - A real Chrome session on a laptop: real folder picker, real idle and focus events.
 - Agent status from claude.ai/code (`extension/content/claude-code.js` is a stub; DOM unverified).
 
@@ -48,7 +54,7 @@ npm run test:live:audit   # audit scenarios against the real model
 1. `chrome://extensions` → Developer mode → Load unpacked → this folder.
 2. Pin the extension, open Settings (from the popup), pick a provider, paste the key, Save, Test connection.
 3. Optional: Connect folder → your second-brain checkout.
-4. In the popup, say what you are about to do. Browse. The popup's "Check now" asks for a verdict; the timer checks every 5 minutes and notifies when you drift (at most once per 15 minutes).
+4. In the popup, say what you are about to do. Browse. About 45 seconds on an unrelated page and the badge shows a nudge; open the popup to answer it. The options page exports the event log.
 
 Secret scanning: `pre-commit install` (gitleaks). The fake keys in `test/consolidate.test.js` are fixtures for the redactor.
 

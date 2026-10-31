@@ -47,6 +47,18 @@
     <p class="status small" id="brain-status"></p>
   </section>
 
+  <section class="card stack">
+    <h2>Event log</h2>
+    <p class="small muted">Everything the companion noticed and decided: pages (URL and title only), judgments, states, nudges and your answers. Kept for 7 days on this device.</p>
+    <div class="row">
+      <button id="export-log">Export event log</button>
+      <button id="import-log">Import event log</button>
+      <button id="cancel-import" hidden>Cancel</button>
+      <input type="file" id="import-file" accept="application/json" hidden>
+    </div>
+    <p class="status small" id="log-status"></p>
+  </section>
+
 <script type="module" src="options.js"></script>
 </body>
 </html>

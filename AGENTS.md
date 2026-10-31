@@ -1,0 +1,90 @@
+# Agent Instructions
+
+## Project
+
+A Chromium MV3 extension: a focus companion for people with ADHD and anyone whose attention
+drifts easily. It knows what you meant to do today, notices when you drift away from it in the
+browser, and talks you back through a small avatar — a buddy, not a blocker — learning which
+detours are fine for you. It does not monitor outside the browser, block or lock pages, give
+medical advice, or (in v1) read page content beyond URL and title.
+
+**Stack:** JavaScript (plain ES modules, no build step), Chrome MV3, IndexedDB + `chrome.storage`, Meta Model API (OpenAI-compatible); Node 24 + npm for tests
+**Layout:** `attention/` deterministic engine, no Chrome dependency ·
+`agent/` LLM nodes, structured output, no tool calls · `extension/` Chrome glue (background,
+side panel, overlay, options) · `memory/` Safa's, used through the `Memory` API ·
+`evals/` JS eval · `demo/` fake brain + event log · `docs/superpowers/specs/` the design
+
+## Commands
+
+| Task | Command |
+|---|---|
+| install | `npm install && npx playwright install chromium` |
+| run locally | `chrome://extensions` → Developer mode → Load unpacked → repo root |
+| test — all | `npm test` |
+| test — one | `node --test test/<name>.test.js` |
+| test — integration | `npm run test:browser && npm run test:e2e` |
+| test — live | `node --env-file=.env test/live/model.mjs` (real API; only when asked) |
+| eval | `npm run eval` (relevance, real API; `REPS=1` for a quick run) |
+| format | `npx prettier --write <file>` (no lint; never reformat untouched files) |
+| typecheck | none (plain JS) |
+
+Never invent an invocation. If a command is missing here, ask for it, then add it.
+
+## Rules
+
+1. **Both errors count: false warnings and missed drifts.** A nagging buddy gets uninstalled; one
+   that misses most distractions is useless. Every nudge offers a one-click correction, both
+   rates are measured by replay, and feedback tunes them. <!-- enforced by: nothing yet (replay test) -->
+2. **`memory/` is Safa's.** If our code needs a change there, open a GitHub issue for Safa
+   instead of editing it directly.
+3. **Small diffs.** Do not rewrite, reorganize, or reformat code the task did not require.
+4. **No new files as a side effect.** No extra README, summary, or report unless asked.
+
+## Workflow
+
+- Read `INTENT.md` before a change that touches what the product does. If the
+  change conflicts with it, say so before writing code.
+- Non-trivial change: follow `docs/guides/workflow.md`. Plan first (`/plan`),
+  agree on it, then implement.
+- Read the guide for an area before changing it; update that guide when behavior changes.
+- State assumptions when a requirement has two readings. Push back when a simpler
+  design or an existing pattern solves it better.
+- Style is the linter's job. Run the lint command; do not hand-police formatting.
+- The worktree may hold human edits. Inspect current content before editing and
+  preserve unrelated changes.
+- Before reporting a change done, run the test and lint commands above and reach
+  green; if a check fails or can't run, say so instead of reporting done.
+- Testing follows `.agents/skills/test/SKILL.md`: which tier a change needs, and
+  never weakening a test to pass.
+- Before opening a PR, run `/code-review` at the level the change warrants.
+
+## Reporting
+
+Say only what you verified, and name the evidence — command, exit status, test count, SHA.
+`written` → `tests pass` → `merged` → `deployed` are separate claims; none implies the next.
+If a check was skipped or failed, say so plainly. Your own second pass is not verification.
+
+## Git
+
+Plain imperative subject, as in the existing history (no Conventional prefix). No trailers, ever —
+no `Co-Authored-By`. Never push unless asked, every time.
+
+- **Protected branches:** `main`. Branch first; never commit ordinary work there.
+- **Commit body width:** 72
+- **Before committing:** `pre-commit install` once (gitleaks)
+
+Full procedure: `.agents/skills/commit/SKILL.md`.
+
+## Where to look
+
+| For | Read |
+|---|---|
+| what the product is for and what "working" means | `INTENT.md` |
+| how a change goes from idea to merged PR | `docs/guides/workflow.md` |
+| what was decided or rejected, and why | `DECISIONS.md` |
+| test tiers, fixtures, what may be mocked | `docs/guides/testing.md` |
+| visual identity and banned UI patterns — read before any UI work | `DESIGN.md` |
+| the MVP design: attention, agent, UI | `docs/superpowers/specs/2026-10-31-attention-agent-design.md` |
+| plans, open and done | `docs/plans/` |
+
+Directory-scoped rules live in `<dir>/AGENTS.md` and apply to everything under it.

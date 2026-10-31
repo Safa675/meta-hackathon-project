@@ -4,3 +4,4 @@ node_modules/
 inbox-export/
 brain/
 .DS_Store
+evals/reports/*.json
