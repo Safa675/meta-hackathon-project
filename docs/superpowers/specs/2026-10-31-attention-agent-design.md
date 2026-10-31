@@ -1,179 +1,181 @@
-# Focus Companion — Attention, Agent ve UI Tasarımı (MVP)
+# Focus Companion — Attention, Agent and UI Design (MVP)
 
-Tarih: 2026-10-31 · Sahip: İrem (attention/, agent/, extension/) · Memory: Safa (memory/)
-Teslim: **4 Kasım 2026, 21:00 ET** (Meta Global AI Developer Hackathon, Indie track). Değerlendirme **demo videosu + repo** üzerinden.
+Date: 2026-10-31 · Owner: İrem (attention/, agent/, extension/) · Memory: Safa (memory/)
+Deadline: **Nov 4 2026, 9:00 PM ET** (Meta Global AI Developer Hackathon, Indie track). Judged on the **demo video + repo**.
 
-## 1. Niyet ve neden
+## 1. Intent and why
 
-ADHD'li ve dikkati çabuk dağılan kişiler için bir **buddy**: tarayıcıda ne yaptığını izler, hedefinden koptuğunu fark eder ve seninle konuşarak seni geri getirir. Cezalandıran ya da engelleyen bir araç değil; yanında oturan, ne yapmak istediğini bilen bir arkadaş.
+A **buddy** for people with ADHD and anyone whose attention drifts easily: it watches what you do in the browser, notices when you lose your goal, and talks you back. Not a tool that punishes or blocks; a friend sitting next to you who knows what you meant to do.
 
-Kullanıcının kendi deneyimi (İrem): iş ortasında Spotify, YouTube, e-postaya kayıyor. Kısa kaçamaklar sorun değil; sorun farkında olmadan uzun kalmak ya da sürekli sekme arasında zıplamak. İstenen: ~30 sn – 1 dk ilgisiz bir yerde kalınca companion'ın araya girmesi, hedefi hatırlatması, durum sorması, "en son nerede kalmıştın"ı söylemesi.
+The user's own experience (İrem): mid-task she slides into Spotify, YouTube, email. Short detours are fine; the problem is staying long without noticing, or hopping between tabs constantly. Wanted: after ~30 s – 1 min somewhere unrelated, the companion steps in, reminds her of the goal, asks for a status, says "this is where you left off".
 
-"İlgisiz" kararı **sabit bir yasaklı listesinden değil, o anki hedefe göre** verilir (e-posta bazen işin parçasıdır; YouTube'da ders videosu iş olabilir). Sistem kullandıkça kişiye özel öğrenir.
+"Unrelated" is decided **against the current goal, not a fixed blocklist** (email is sometimes part of the work; a tutorial on YouTube can be work). The system personalises as it is used.
 
-Jüri kriterleri: yaratıcılık, teknik iddia, çalışıyor olması. Bu yüzden: **çekirdek dikkat motoru güvenilir ve gösterilebilir olmalı**; teknik hikâye "deterministik dikkat motoru + yalnızca yargı gereken yerde LLM + kişiye özel öğrenme".
+Judging criteria: creativity, technical ambition, whether it works. So: **the core attention engine must be reliable and demonstrable**; the technical story is "deterministic attention engine + LLM only where judgment is needed + personal learning".
 
-## 2. Hedefler, hedef olmayanlar, anti-hedefler
+## 2. Goals, non-goals, anti-goals
 
-**Hedefler (MVP)**
-- Oturum açılışında avatarın konuşmayı başlatması; memory'deki bitmemiş işlere göre "devam mı, yeni mi?" sorup bir hedef oluşturması.
-- Hedefe göre her sayfanın ilgili/ilgisiz/nötr olarak değerlendirilmesi.
-- ~45 sn civarında kayma ve hızlı sekme zıplamasının (parçalanma) fark edilmesi.
-- Kademeli, sayfayı kilitlemeyen müdahale; "Take me back" ile en son ilgili sekmeye tek tıkla dönüş.
-- Geri bildirimden öğrenme ("This is for my task" → kalıcı etiket; kişisel tolerans süresi).
-- Modlar: Odak / Nazik / Rahatsız Etme / Kapalı.
-- Tüm olayların ham bir olay günlüğüne yazılması; metriklerin bu günlükten hesaplanması; kayıt-ve-tekrar-oynat ile test.
-- Demo videosunda baştan sona çalışan akış.
+**Goals (MVP)**
+- On session open, the avatar starts the conversation; based on unfinished work in memory it asks "continue or something new?" and forms a goal.
+- Every page judged related / unrelated / neutral against the goal.
+- Drift detected at ~45 s, and rapid tab hopping (fragmentation) detected.
+- Graduated intervention that never locks the page; one click "Take me back" to the last related tab.
+- Learning from feedback ("This is for my task" → durable label; personal tolerance).
+- Modes: Focus / Gentle / Do Not Disturb / Off.
+- Every event written to a raw event log; metrics computed from it; record-and-replay testing.
+- An end-to-end flow that works in the demo video.
 
-**Hedef olmayanlar (bu MVP'de yok)**
-- Sistem genelinde (tarayıcı dışı) izleme, masaüstü uygulaması.
-- Safa'nın MCP sunucusuna bağlantı (kararlaştırıldı: memory folder import ile çalışıyor; MCP sonra, gecikme ölçülünce değerlendirilecek).
-- Muse Code / claude.ai/code oturum bağlantısı (sonraki aşama).
-- Ham transcript'lerin (cold layer) kullanılması.
-- Chrome Web Store yayını (isteğe bağlı "unlisted" gönderim, yetişirse bonus).
-- Web search, MCP araçları, hızlı işlemler gibi genişletmeler.
-- Ekran görüntüsü / sayfa içeriği okuma (yalnızca URL + başlık + sinyaller).
+**Non-goals (not in this MVP)**
+- System-wide (outside the browser) monitoring, a desktop app.
+- Connecting to Safa's MCP server (decided: memory works by folder import; MCP later, once latency is measured).
+- Muse Code / claude.ai/code session connection (next stage).
+- Using raw transcripts (cold layer).
+- Chrome Web Store publication (an optional "unlisted" submission is a bonus if time allows).
+- Extensions such as web search, MCP tools, quick actions.
+- Screenshots or reading page content (URL + title + signals only).
 
-**Anti-hedefler (teknik olarak çalışsa bile başarısızlık sayılır)**
-- Dırdır eden companion: araştırma yaparken haksız uyarı, aynı şeyi tekrar tekrar söylemek. Yanlış pozitif, yanlış negatiften daha kötüdür.
-- Sayfayı bloklayan, modal açan, kapatılamayan müdahale.
-- Ahlak dersi, tıbbi/ruh sağlığı tavsiyesi, teşhis dili.
-- Demoda takılan akış (LLM gecikmesi kullanıcıya bekleme olarak yansımamalı).
+**Anti-goals (failure even if it technically works)**
+- A nagging companion: unfair warnings during research, repeating itself. A false positive is worse than a false negative.
+- Intervention that blocks the page, opens a modal, or cannot be dismissed.
+- Moralising, medical or mental-health advice, diagnostic language.
+- A demo flow that stalls (LLM latency must never show up as the user waiting).
 
-## 3. Kısıtlar
+## 3. Constraints
 
-- **Süre:** ~4 gün. Her karar "4 günde demoda sağlam çalışır mı?" ile tartılır. Aşırı mühendislik yok; her adım deneyerek, gözle kontrol edilerek ilerler.
-- **Platform:** Chromium MV3 eklentisi, tamamen JavaScript. Ayrı backend yok; model çağrıları eklentiden doğrudan.
-- **Build:** Repo şu an build adımı olmayan saf ES modülleri. Bu korunur; tek istisna LangGraph denemesi başarılı olursa agent için esbuild bundle (bkz. §6.3).
-- **Model:** `muse-spark-1.3-contributor` (repodaki varsayılan, OpenAI uyumlu, `memory/model.js` üzerinden). Türkiye'den erişilemezse `muse-spark-1.3`. Muse Wonder kullanılmaz. Bütçe 150$ API kredisi.
-- **Memory sınırı:** `memory/` Safa'nın. Değiştirilmez; yalnızca `Memory` API'si (memory/README.md) kullanılır. Gerekirse Safa'dan küçük API eklemeleri istenir.
-- **Gizlilik:** Yalnızca URL, başlık, sekme sinyalleri. Sayfa içeriği ve ekran görüntüsü gönderilmez.
-- **Dil:** Kod, yorumlar, prompt'lar, şablon mesajlar, UI metinleri ve demo videosu **İngilizce**. Companion'ın sesi minimal ve arkadaşça ("Take me back", "Give me 5" tonunda; kurumsal ya da robotik değil). Kullanıcı başka bir dilde yazarsa o dilde cevap verir.
-- **Demo verisi:** Gerçek bir brain kullanılmaz. Repoda demo için hazırlanmış sahte bir brain klasörü (`demo/brain/`, brain formatında; bitmemiş işler ve birkaç not) ve örnek bir olay günlüğü (`demo/eventlog.json`) bulunur. Brain import ve options sayfasındaki "import event log" ile yüklenir; replay testleri de aynı günlüğü kullanır. Video bu veriyle tekrar tekrar aynı şekilde çekilebilir.
+- **Time:** ~4 days. Every decision is weighed by "will this work solidly in the demo within 4 days?". No over-engineering; each step is built by trying and checked by eye.
+- **Platform:** Chromium MV3 extension, all JavaScript. No separate backend; model calls go straight from the extension.
+- **Build:** The repo is plain ES modules with no build step. That stays; the only exception is an esbuild bundle for the agent if the LangGraph trial passes (§6.3).
+- **Model:** `muse-spark-1.3-contributor` (repo default, OpenAI-compatible, via `memory/model.js`). If not reachable from Turkey, `muse-spark-1.3`. No Muse Wonder. Budget: $150 API credit.
+- **Memory boundary:** `memory/` is Safa's. Not modified; only the `Memory` API (memory/README.md) is used. Small API additions, if ever needed, are requested from Safa.
+- **Privacy:** URL, title and tab signals only. No page content, no screenshots.
+- **Language:** Code, comments, docs, prompts, template messages, UI text and the demo video are **English**. The companion's voice is minimal and friendly ("Take me back", "Give me 5" — not corporate, not robotic). If the user writes in another language, it answers in that language.
+- **Demo data:** No real brain. The repo ships a fake brain folder for the demo (`demo/brain/`, in brain format; unfinished work and a few notes) and a sample event log (`demo/eventlog.json`). Loaded via brain import and an "import event log" button on the options page; replay tests use the same log. The video can be re-recorded identically from this data.
 
-## 4. Kararlaştırılanlar (İrem ve ekip)
+## 4. Decided (İrem and the team)
 
-- Chromium tabanlı eklenti (sistem geneli değil).
-- İki katmanlı memory: **sıcak** (eklenti içi IndexedDB; activity, olaylar, etiketler, brain'den alınan notlar) ve **soğuk/kalıcı** (Safa'nın second brain'i; şimdilik folder import ile). MCP şimdilik yok.
-- Attention, agent ve UI/UX İrem'de; `agent/audit.js` temel alınmaz.
-- Deterministik / factual işler script ile; LLM yalnızca yargı gereken yerde ve **structured output** ile. Agent **tool call yapmaz**; model bir niyet/aksiyon döndürür, script uygular.
-- Avatar companion konuşmayı başlatır; chat arayüzü + modlar + geri bildirim UI'da.
-- Loglama: kişinin tarayıcı kullanım akışını anlamaya yetecek, doğru kaydedilmiş ham veri.
-- İlk dikkat motoru tasarımı (v1) kabul edildi; deneyerek iterate edilecek.
+- Chromium extension (not system-wide).
+- Two-layer memory: **hot** (in-extension IndexedDB: activity, events, labels, notes imported from the brain) and **cold/durable** (Safa's second brain; folder import for now). No MCP for now.
+- Attention, agent and UI/UX are İrem's; `agent/audit.js` is not the basis.
+- Deterministic / factual work runs as scripts; the LLM only where judgment is needed, with **structured output**. The agent makes **no tool calls**: the model returns an intent/action, a script executes it.
+- The avatar companion starts the conversation; chat interface + modes + feedback live in the UI.
+- Logging: raw data, recorded correctly, sufficient to understand the person's browsing flow.
+- The first attention engine design (v1) is accepted; it will be iterated by trying it.
 
-## 5. Mimari
+## 5. Architecture
 
-### 5.1 Klasörler
-
-```
-memory/       Safa — dokunulmaz. Memory API (entries, intent, open loops, contextPack, recordActivity, brain import)
-attention/    İrem — saf JS, Chrome'a bağımlı değil, node ile test edilir
-              sensor olay modeli, relevance (etiket/önbellek/LLM kapısı), budget, state machine, triggers, policy, eventlog, metrics
-agent/        İrem — LLM düğümleri (structured output), diyalog akışları, şemalar, prompt formatlama
-              audit.js referans olarak kalır, bağlanmaz
-extension/    İrem — Chrome yapıştırıcısı: background.js (yeniden yazılır), sidepanel/, overlay/ (content script), options/
-test/         node unit testleri + replay testleri + canlı model testleri
-```
-
-### 5.2 Akış
+### 5.1 Folders
 
 ```
-chrome.tabs/windows/idle/alarms ─► sensor ─► context olayı ─► relevance ─► budget + state machine ─► trigger
-                                                   │  (etiket → önbellek → LLM#1)                     │
+memory/       Safa — untouched. Memory API (entries, intent, open loops, contextPack, recordActivity, brain import)
+attention/    İrem — plain JS, no Chrome dependency, tested with node
+              sensor event model, relevance (label/cache/LLM gate), budget, state machine, triggers, policy, eventlog, metrics
+agent/        İrem — LLM nodes (structured output), dialogue flows, schemas, prompt formatting
+              audit.js stays as reference, not wired
+extension/    İrem — Chrome glue: background.js (rewritten), sidepanel/, overlay/ (content script), options/
+evals/        İrem — simple JS eval for LLM nodes (cases, graders, baseline); replaces the Python harness
+demo/         fake brain + sample event log
+test/         node unit tests + replay tests + live model tests
+```
+
+### 5.2 Flow
+
+```
+chrome.tabs/windows/idle/alarms ─► sensor ─► context event ─► relevance ─► budget + state machine ─► trigger
+                                                   │  (label → cache → LLM#1)                         │
                                                    ▼                                                  ▼
-                                               eventlog ◄──────────────────────────────────────── policy (mod, cooldown, kademe)
+                                               eventlog ◄──────────────────────────────────────── policy (mode, cooldown, level)
                                                                                                       │
-                                         agent (LLM#2–#4, structured) ◄── yalnızca konuşma gerekirse ─┘
+                                         agent (LLM#2–#4, structured) ◄── only when it must speak ────┘
                                                    │
                                                    ▼
-                                     UI: avatar overlay + baloncuk + butonlar / side panel chat
+                                     UI: avatar overlay + bubble + buttons / side panel chat
                                                    │
-                         kullanıcı cevabı ─► buton: doğrudan script aksiyonu │ serbest metin: LLM#3 → aksiyon → script
+                         user reply ─► button: direct script action │ free text: LLM#3 → action → script
 ```
 
-Attention "duyular ve refleks"tir: her saniye çalışır, deterministiktir. Agent "ses ve akıl"dır: yalnızca konuşulacağı ya da yargı gerektiğinde çalışır.
+Attention is "the senses and the reflex": it runs every second and is deterministic. The agent is "the voice and the mind": it runs only when it has to speak or judge.
 
-### 5.3 Script vs LLM ayrımı
+### 5.3 Script vs LLM
 
-**Script (deterministik):** sensörler, kalma süresi, kayma bütçesi, sekme değişim sıklığı, durum makinesi, tetikler, cooldown, modlar, etiket/önbellek kontrolü, sekmeye dönme, buton aksiyonları, loglama, metrikler, oturum başlangıcı tespiti.
+**Script (deterministic):** sensors, dwell time, drift budget, tab-switch rate, state machine, triggers, cooldown, modes, label/cache lookup, switching back to a tab, button actions, logging, metrics, session-start detection.
 
-**LLM (yargı):** yalnızca §6.2'deki beş düğüm.
+**LLM (judgment):** only the five nodes in §6.2.
 
-## 6. Bileşenler
+## 6. Components
 
-### 6.1 Attention motoru (`attention/`)
+### 6.1 Attention engine (`attention/`)
 
-**Sensör (extension/background.js içinde, olayları attention'a verir)**
-- `tabs.onActivated`, `tabs.onUpdated` (url/title/status complete), `windows.onFocusChanged`, `idle.onStateChanged`, `chrome.alarms` 30 sn heartbeat.
+**Sensor (inside extension/background.js, feeds events to attention)**
+- `tabs.onActivated`, `tabs.onUpdated` (url/title/status complete), `windows.onFocusChanged`, `idle.onStateChanged`, `chrome.alarms` 30 s heartbeat.
 - Snapshot: `{ts, tabId, windowId, url, host, title, audible, browserFocused, idleState}`.
-- Ses çalan sekmede input yokluğu "uzakta" sayılmaz (repodaki mevcut davranış korunur).
-- Eklentinin kendi sayfaları nötrdür.
-- Service worker uykuya geçebilir: tüm motor durumu (`state`, `budget`, `currentContext`, `lastRelevant`, `cooldowns`) `chrome.storage.session`'a yazılır ve her olayda oradan okunur. Bellekte tutulan durum doğruluk kaynağı değildir.
+- No input on an audible tab is not "away" (the repo's current behaviour is kept).
+- The extension's own pages are neutral.
+- The service worker can be stopped: all engine state (`state`, `budget`, `currentContext`, `lastRelevant`, `cooldowns`) is written to `chrome.storage.session` and read back on every event. In-memory state is never the source of truth.
 
-**İlgi kararı (relevance)**
-- Anahtar: `intentId + host + normalize(title)` (YouTube gibi sitelerde başlık şart; çoğu sitede host yeterli olabilir — builder normalizasyonu belirler).
-- Sıra: (1) kullanıcı etiketleri (2) önbellek (3) LLM#1. LLM cevabı beklenirken sayfa **nötr** sayılır.
-- Sonuç: `related | unrelated | neutral` + `confidence`. Düşük güvenli `unrelated` (eşik builder'ın, başlangıç 0.6) nötr gibi davranır — anti-hedef: haksız uyarı.
-- Nötr kategorisi: arama motorları, yeni sekme, takvim, eklentinin kendisi gibi ara geçişler.
+**Relevance**
+- Key: `intentId + host + normalize(title)` (on sites like YouTube the title is essential; on most sites the host may be enough — the builder decides normalisation).
+- Order: (1) user labels (2) cache (3) LLM#1. While the LLM answer is pending, the page counts as **neutral**.
+- Result: `related | unrelated | neutral` + `confidence`. A low-confidence `unrelated` (threshold is the builder's, start at 0.6) behaves as neutral — anti-goal: unfair warnings.
+- Neutral covers in-between stops: search engines, new tab, calendar, the extension itself.
 
-**Kayma bütçesi**
-- İlgisiz bağlamda geçen her saniye bütçeye eklenir; ilgili bağlamda bütçe azalır (decay); nötrde sabit kalır.
-- Bütçe tolerans eşiğini aşınca `drift` tetiği.
-- Ayrıca son 2 dk'daki sekme değişim sayısı ve ilgisiz payı izlenir → `fragmentation` tetiği.
-- Başlangıç değerleri (builder ayarlar, replay ile doğrular): tolerans ~45 sn; decay ilgisiz birikimin ~2 katı hızında; fragmentation: 2 dk'da ≥6 geçiş ve süre payının ≥%50'si ilgisiz.
+**Drift budget**
+- Every second in an unrelated context adds to the budget; in a related context the budget decays; neutral holds it steady.
+- Budget over the tolerance threshold → `drift` trigger.
+- Tab switches in the last 2 min and their unrelated share are also tracked → `fragmentation` trigger.
+- Starting values (the builder tunes them, verified by replay): tolerance ~45 s; decay ~2× the rate of unrelated accumulation; fragmentation: ≥6 switches in 2 min with ≥50% of the time unrelated.
 
-**Durum makinesi**
-`focused` · `detour` (ilgisiz, bütçe eşik altı) · `drifting` · `away` (idle / tarayıcı odak dışı / ekran kilidi) · `break` (kullanıcı ilan etti, süreli) · `paused` (Rahatsız Etme / Kapalı) · `no_intent`.
+**State machine**
+`focused` · `detour` (unrelated, budget under threshold) · `drifting` · `away` (idle / browser unfocused / screen locked) · `break` (declared by the user, timed) · `paused` (Do Not Disturb / Off) · `no_intent`.
 
-**En son ilgili yer:** son `related` bağlamın `{tabId, url, title, ts}`'si her zaman tutulur. Sekme kapandıysa URL yeni sekmede açılır.
+**Last related place:** the `{tabId, url, title, ts}` of the last `related` context is always kept. If that tab was closed, the URL opens in a new tab.
 
-**Tetikler**
-| Tetik | Koşul |
+**Triggers**
+| Trigger | Condition |
 |---|---|
-| `session_start` | Günün ilk aktif tarayıcı odağı ya da eklenti etkinleştirildi ve aktif hedef yok |
-| `drift` | Bütçe toleransı aştı |
-| `fragmentation` | §kayma bütçesindeki koşul |
-| `return` | `away` → aktif, uzaklık ≥ birkaç dakika (builder: ~5 dk) |
-| `break_over` | İlan edilen mola süresi doldu |
-| `checkin` | Uzun kesintisiz odak (builder: ~25 dk) — hafif, opsiyonel |
+| `session_start` | First active browser focus of the day, or the extension was enabled, and there is no active goal |
+| `drift` | Budget over tolerance |
+| `fragmentation` | The condition in "Drift budget" |
+| `return` | `away` → active after being away ≥ a few minutes (builder: ~5 min) |
+| `break_over` | The declared break has ended |
+| `checkin` | Long uninterrupted focus (builder: ~25 min) — light, optional |
 
-**Politika (deterministik)**
-- Mod: Odak = tüm tetikler; Nazik = toleranslar ~2 katı, yalnızca L1–L2; Rahatsız Etme = sensör ve log çalışır, müdahale yok (tetikler `suppressedBy: "dnd"` ile loglanır); Kapalı = sensör de durur.
-- Kademe: **L1** avatar dikkat animasyonu, metin yok, LLM yok → **L2** baloncuk: kısa soru + butonlar (*Take me back*, *This is for my task*, *5-min break*) → **L3** hedef + "en son şunu yapıyordun" + *Take me back*. Kullanıcı tepki vermezse ve kayma sürerse bir sonraki kademeye geçilir.
-- Cooldown: aynı tetik tipi için bekleme (builder: L2 sonrası ~2 dk). Bastırılan tetikler de loglanır.
-- Müdahale hiçbir zaman sayfayı kilitlemez; avatar küçültülebilir.
+**Policy (deterministic)**
+- Modes: Focus = all triggers; Gentle = tolerances ~2×, levels L1–L2 only; Do Not Disturb = sensors and log keep running, no intervention (triggers logged with `suppressedBy: "dnd"`); Off = sensors stop too.
+- Levels: **L1** avatar attention animation, no text, no LLM → **L2** bubble: short question + buttons (*Take me back*, *This is for my task*, *5-min break*) → **L3** goal + "you were last doing this" + *Take me back*. If the user does not react and the drift continues, the next level follows.
+- Cooldown per trigger type (builder: ~2 min after L2). Suppressed triggers are logged too.
+- Intervention never locks the page; the avatar can be minimised.
 
-**Öğrenme (deterministik)**
-- *This is for my task* → etiket `{host(+title pattern), intentTopic, label: related}` sıcak katmana; ayrıca `memory.add({kind: "preference", ...})` ile memory'ye bir kayıt (brain'e export edilebilir).
-- Kişisel tolerans: host başına; kullanıcı müdahaleden önce kendiliğinden dönüyorsa tolerans artar, müdahaleyi görmezden gelip uzun kalıyorsa azalır (basit üstel ortalama; sınırlar 20–120 sn).
+**Learning (deterministic)**
+- *This is for my task* → label `{host(+title pattern), intentTopic, label: related}` in the hot layer; plus a record in memory via `memory.add({kind: "preference", ...})` (exportable to the brain).
+- Personal tolerance, per host: if the user often comes back on their own before an intervention, tolerance grows; if they ignore interventions and stay long, it shrinks (simple exponential average; bounds 20–120 s).
 
 ### 6.2 Agent (`agent/`)
 
-Beş LLM düğümü. Hepsi JSON şemaya göre structured output döndürür; şema doğrulaması başarısızsa bir kez hata metniyle tekrar sorulur, yine olmazsa deterministik fallback.
+Five LLM nodes. Each returns structured output against a JSON schema; if schema validation fails it is asked once more with the error text, then falls back deterministically.
 
-| # | Düğüm | Ne zaman | Girdi (ham state'ten formatlanır) | Çıktı | Fallback |
+| # | Node | When | Input (formatted from raw state) | Output | Fallback |
 |---|---|---|---|---|---|
-| 1 | `classifyRelevance` | Etiket/önbellekte olmayan yeni bağlam | hedef, adımlar, host, title, kullanıcı etiket örnekleri | `{label, confidence, reason}` | `neutral` |
-| 2 | `openSession` | `session_start` diyaloğu | açık döngüler, son hedef, kullanıcının cevabı | `{message, intent?: {title, steps[], estMin, topic}, continueLoopId?, needsMore: bool}` | şablon soru |
-| 3 | `interpretReply` | Kullanıcı serbest metin yazdı | konuşma geçmişi, attention snapshot | `{action: "label_relevant"\|"break"\|"new_intent"\|"complete_intent"\|"set_mode"\|"chat", args, reply}` | `chat` + şablon cevap |
-| 4 | `composeNudge` | L2/L3 müdahalesi | tetik olayı, hedef, en son ilgili yer, kişisel örüntüler | `{message, buttons[]}` | şablon mesaj (hemen gösterilir; LLM cevabı ~2 sn içinde gelirse değiştirilir) |
-| 5 | `reflect` | Saatlik alarm ve oturum sonu | olay günlüğünden hesaplanmış özet | `{patterns[], suggestions[]}` → memory'ye `lesson`/`fact` | atla |
+| 1 | `classifyRelevance` | A new context not in labels/cache | goal, steps, host, title, examples of user labels | `{label, confidence, reason}` | `neutral` |
+| 2 | `openSession` | `session_start` dialogue | open loops, last goal, user's reply | `{message, intent?: {title, steps[], estMin, topic}, continueLoopId?, needsMore: bool}` | template question |
+| 3 | `interpretReply` | User typed free text | conversation history, attention snapshot | `{action: "label_relevant"\|"break"\|"new_intent"\|"complete_intent"\|"set_mode"\|"chat", args, reply}` | `chat` + template reply |
+| 4 | `composeNudge` | L2/L3 intervention | trigger event, goal, last related place, personal patterns | `{message, buttons[]}` | template message (shown immediately; replaced if the LLM answers within ~2 s) |
+| 5 | `reflect` | Hourly alarm and session end | summary computed from the event log | `{patterns[], suggestions[]}` → memory as `lesson`/`fact` | skip |
 
-Persona kuralları (tüm düğümler): kısa, sıcak, somut; varsayılan İngilizce, minimal ve arkadaşça; kullanıcı başka dilde yazarsa o dilde cevap; ahlak dersi ve tıbbi dil yok.
+Persona rules (all nodes): short, warm, concrete; English by default, minimal and friendly; answer in the user's language if they write in another; no moralising, no medical language.
 
-Repodan yeniden kullanılacaklar: `memory/model.js` (`modelClient`), `agent/audit.js`'teki `extractJsonObject` (kopyalanır), `test/live/audit.mjs` senaryoları LLM#1 değerlendirmesi için uyarlanır.
+Reused from the repo: `memory/model.js` (`modelClient`), `extractJsonObject` from `agent/audit.js` (copied), the scenarios in `test/live/audit.mjs` adapted as eval cases for LLM#1.
 
-### 6.3 LangGraph.js kararı (ilk gün denemesi)
+### 6.3 LangGraph.js decision (day-one trial)
 
-Diyalog akışları (2, 3, 4 ve aralarındaki "kullanıcı cevabını bekle") LangGraph'ın düğüm + `interrupt()` modeline uyuyor. Ancak tarayıcıda yalnızca `@langchain/langgraph/web` ile çalışıyor (bundle gerekir), service worker uykusunda `MemorySaver` kaybolur ve MV3 service worker'da resmi olarak doğrulanmış değil.
+The dialogue flows (2, 3, 4 and the "wait for the user's reply" between them) fit LangGraph's node + `interrupt()` model. But in the browser it only runs via `@langchain/langgraph/web` (needs a bundle), `MemorySaver` is lost when the service worker stops, and it is not officially verified in an MV3 service worker.
 
-**Karar kapısı (en fazla ~2 saat):** LangGraph.js `/web`, esbuild ile bundle edilip eklentide (tercihen side panel bağlamında ya da IndexedDB checkpointer ile service worker'da) bir grafiği çalıştırıp `interrupt` → resume yapabiliyorsa kullanılır. Yapamıyorsa aynı düğüm/state tasarımı düz fonksiyonlar + basit bir durum nesnesiyle uygulanır. Düğüm tanımları, şemalar ve state tasarımı iki durumda da aynıdır. Attention motoru hiçbir durumda LangGraph'a bağlı değildir.
+**Decision gate (at most ~2 hours):** if LangGraph.js `/web`, bundled with esbuild, can run a graph inside the extension (in the side panel context) and do `interrupt` → resume, it is used. If not, the same node/state design is implemented with plain functions and a simple state object. Node definitions, schemas and state design are identical either way. The attention engine never depends on LangGraph.
 
-State ilkeleri (LangGraph'ın "Thinking in LangGraph" rehberinden): state'te ham veri; prompt'lar düğüm içinde formatlanır; geçici hatalar retry/backoff, şema hataları LLM'e geri döner, eksik bilgi kullanıcıya sorulur.
+State principles (from LangGraph's "Thinking in LangGraph" guide): raw data in state; prompts formatted inside the node; transient errors retry with backoff, schema errors go back to the LLM, missing information is asked of the user.
 
-### 6.4 Olay günlüğü ve metrikler (`attention/eventlog`)
+### 6.4 Event log and metrics (`attention/eventlog`)
 
-Attention'ın kendi IndexedDB veritabanında (memory'ninkinden ayrı; Safa'nın şemasına dokunmamak için) yalnızca ekleme yapılan `events` deposu, `ts` ve `type` indeksli. Ayrıca `labels`, `relevanceCache`, `tolerance` depoları.
+An append-only `events` store, indexed by `ts` and `type`, in attention's own IndexedDB database (separate from memory's, to leave Safa's schema alone). Also `labels`, `relevanceCache`, `tolerance` and `intents` stores.
 
 ```
 context    {ts, tabId, host, url, title, audible, browserFocused, idleState}
@@ -186,73 +188,74 @@ session    {ts, kind: start|end|intent_set|intent_done|mode, payload}
 feedback   {ts, kind: label|tolerance, payload}
 ```
 
-- Metrikler (odak yüzdesi, kayma sayısı, geri dönüş süresi, müdahale kabul oranı, en çok kayılan siteler, saat bazında kayma) **saklanmaz, hesaplanır**.
-- Günlük JSON olarak dışa aktarılabilir (options sayfasında buton) — hata ayıklama, replay ve demo için.
-- Repodaki `memory.recordActivity` de beslenmeye devam eder (memory'nin `activity()` ve `distill()` akışları çalışsın diye).
-- Saklama: 7 gün (memory ile aynı).
+- Metrics (focus share, drift count, time to return, intervention acceptance rate, most-drifted sites, drift by hour) are **computed, not stored**.
+- The log can be exported as JSON (button on the options page) — for debugging, replay and the demo.
+- `memory.recordActivity` keeps being fed (so memory's `activity()` and `distill()` keep working).
+- Retention: 7 days (same as memory).
 
-### 6.5 Memory entegrasyonu
+### 6.5 Memory integration
 
-| Ne | Nasıl |
+| What | How |
 |---|---|
-| Bitmemiş işler (oturum açılışı) | `memory.openLoops()`, `memory.latestIntent()` |
-| Hedef belirleme / bitirme | `memory.setIntent()`, `memory.completeIntent()` |
-| İlgi kararı için bağlam | `memory.contextPack({title, url})` (LLM#1'e kısa haliyle) |
-| Öğrenilen tercih ve örüntüler | `memory.add({kind: "preference"\|"lesson", topic, ...})` |
-| Sekme aktivitesi | `memory.recordActivity()` (mevcut davranış) |
-| Brain import / upkeep | mevcut `maintain`, `syncBrain` alarmları korunur |
+| Unfinished work (session open) | `memory.openLoops()`, `memory.latestIntent()` |
+| Setting / finishing a goal | `memory.setIntent()`, `memory.completeIntent()` (mirrored by the shadow intent, §9.1) |
+| Context for relevance | `memory.contextPack({title, url})` (shortened for LLM#1) |
+| Learned preferences and patterns | `memory.add({kind: "preference"\|"lesson", topic, ...})` |
+| Tab activity | `memory.recordActivity()` (current behaviour) |
+| Brain import / upkeep | the existing `maintain` and `syncBrain` alarms are kept |
 
-Etiketler ve tolerans sıcak katmanda attention DB'sinde tutulur (hızlı, her saniye okunur); kalıcı karşılıkları memory'ye yazılır. MCP adaptörü bu tablonun arkasına ileride eklenebilir; arayüz değişmez.
+Labels and tolerance live in the hot layer in attention's DB (fast, read every second); their durable counterparts are written to memory. An MCP adapter can later sit behind this table without changing the interface.
 
 ### 6.6 UI/UX (`extension/`)
 
-- **Avatar overlay (content script, Shadow DOM):** aktif sekmeye `chrome.scripting` ile enjekte edilir; sayfa köşesinde küçük, sürüklenebilir, küçültülebilir. Durum animasyonları: `idle`, `watching`, `curious` (L1), `talking` (L2/L3 baloncuk), `celebrating` (hedef tamamlandı / geri dönüldü), `sleeping` (Rahatsız Etme/mola). SVG + CSS animasyon. Enjekte edilemeyen sayfalarda (`chrome://`, Web Store) side panel + badge'e düşülür.
-- **Baloncuk:** avatarın yanında; mesaj + en fazla 3 buton + *Talk to me* (side panel'i açar; bkz. §9.3). Hiçbir zaman modal değil.
-- **Side panel (popup'ın yerini alır; eklenti ikonuna tıklayınca açılır):** üstte aktif hedef ve adımlar (*Bitti* butonu), mod seçici (4 mod), chat geçmişi ve giriş alanı, bugünün özeti (odak süresi, kayma sayısı, geri dönüş süresi — günlükten hesaplanır).
-- **Options sayfası:** mevcut model/anahtar ayarları + brain klasörü bağlama (repoda var) + olay günlüğünü dışa aktarma + ayar sıfırlama.
-- `chrome.notifications` yalnızca tarayıcı odak dışındayken mola bitişi gibi durumlar için yedek.
-- **Avatarın görsel kimliği henüz tasarlanmadı.** Claude ikonunun sadeliği ve sevimliliği ilham; ama farklı bir yapıda olacak. Görsel tasarım ayrı bir oturumda mockup'larla yapılacak; builder bu süre için yer tutucu basit bir SVG karakterle (durum animasyonları çalışır halde) ilerler.
+- **Avatar overlay (content script, Shadow DOM):** injected into the active tab with `chrome.scripting`; small, in a page corner, draggable, minimisable. State animations: `idle`, `watching`, `curious` (L1), `talking` (L2/L3 bubble), `celebrating` (goal done / came back), `sleeping` (Do Not Disturb / break). SVG + CSS animation. On pages that cannot be injected (`chrome://`, Web Store) it falls back to the side panel + badge.
+- **Bubble:** next to the avatar; message + up to 3 buttons + *Talk to me* (opens the side panel; see §9.3). Never modal.
+- **Side panel (replaces the popup; opens on the extension icon):** active goal and steps at the top (*Done* button), mode selector (4 modes), chat history and input, today's summary (focus time, drift count, time to return — computed from the log).
+- **Options page:** the existing model/key settings + brain folder connection (already in the repo) + export/import of the event log + reset.
+- `chrome.notifications` only as a fallback, e.g. break over while the browser is unfocused.
+- **The avatar's visual identity is not designed yet.** Inspired by the simplicity and cuteness of the Claude icon, but a different shape. The visual design happens in a separate session with mockups; meanwhile the builder uses a simple placeholder SVG character (with working state animations).
 
-## 7. Deneyerek kurma sırası
+## 7. Build-by-trying order
 
-Her adımın sonunda gözle kontrol edilebilir, çalışan bir şey olur:
+Each step ends with something working that can be checked by eye:
 
-1. **Sensör + olay günlüğü + dışa aktarma.** Bir saat gerçek gezinme; günlüğe bak.
-2. **LLM#1 offline:** kayıtlı bağlamlar ve uyarlanmış senaryolar üzerinde node script'i; doğruluk ve gecikme tablosu. Contributor erişimi burada doğrulanır.
-3. **Budget + durum makinesi + tetikler + politika,** kayıtlı günlüğü tekrar oynatan (replay) testlerle ayarlanır.
-4. **LangGraph karar kapısı** (§6.3), en fazla ~2 saat.
-5. **Overlay avatar + baloncuk + butonlar** (önce şablon mesajlar), "Take me back".
-6. **Side panel:** hedef, modlar, chat; `openSession`, `interpretReply`, `composeNudge`.
-7. **Öğrenme:** etiketler, tolerans; `reflect`.
-8. **Demo verisi (sahte brain + örnek olay günlüğü) + demo senaryosu + video.** Sahte brain erken (adım 1–2 civarı) hazırlanabilir; replay testleri ona dayanır.
+1. **Sensor + event log + export.** An hour of real browsing; read the log. Fake brain (`demo/brain/`) prepared alongside.
+2. **LLM#1 offline eval (`evals/`, JS):** a node script over recorded contexts and adapted scenarios; accuracy and latency table, compared with a stored baseline. Contributor access is verified here.
+3. **Budget + state machine + triggers + policy,** tuned with replay tests over the recorded log.
+4. **LangGraph decision gate** (§6.3), at most ~2 hours.
+5. **Overlay avatar + bubble + buttons** (template messages first), "Take me back".
+6. **Side panel:** goal, modes, chat; `openSession`, `interpretReply`, `composeNudge`.
+7. **Learning:** labels, tolerance; `reflect`.
+8. **Demo data (fake brain + sample event log) finalised + demo script + video.**
 
-Testler: attention/ ve agent şema/parse fonksiyonları için node unit testleri; replay testleri; canlı model testleri (`MODEL_API_KEY`). Mevcut `npm test` yeşil kalır.
+Tests: node unit tests for attention/ and for agent schema/parse functions; replay tests; live model tests and evals (`MODEL_API_KEY`). The existing `npm test` stays green.
 
-## 8. Demo senaryosu (taslak)
+## 8. Demo script (draft)
 
-Eklenti açılır → avatar "Yesterday you stopped at the demo video edit. Pick it back up?" → hedef belirlenir → çalışma → YouTube'a kayma, ~45 sn sonra avatar bakar, sonra konuşur → *Take me back* ile doğru sekmeye dönüş → başka bir sitede *This is for my task* → bir dahaki sefere sessiz kalır (öğrenme) → hızlı sekme zıplaması → parçalanma uyarısı → side panel'de günün özeti.
+Extension opens → avatar: "Yesterday you stopped at the demo video edit. Pick it back up?" → goal set → work → drift to YouTube; after ~45 s the avatar looks, then speaks → *Take me back* returns to the right tab → on another site *This is for my task* → next time it stays quiet (learning) → rapid tab hopping → fragmentation nudge → today's summary in the side panel.
 
-## 9. Tasarım sırasında verilen kararlar (Claude'un kararı — İrem kontrol etsin)
+## 9. Decisions made during design (Claude's call — İrem to check)
 
-Reviewer'ın sorularına verilen, İrem'in onayına açık cevaplar:
+Answers to the reviewer's questions, open to İrem's approval:
 
-1. **Hedef (intent) kaydı attention DB'sinde "gölge" kayıt olarak tutulur.** `memory.setIntent()` yalnızca `{title, next}` alıyor, topic'i `"focus"` olarak sabitliyor ve id'si içerik hash'i (consolidate sırasında değişebilir). Bu yüzden attention DB'sinde `intents` deposu: `{id: uuid (sabit), title, steps[], estMin, topic, createdAt, doneAt?, expiredAt?, memoryEntryId?, fromLoopId?}`. Brain uyumluluğu için `memory.setIntent()` / `completeIntent()` yine çağrılır ve dönen id `memoryEntryId` olarak saklanır; ilgi anahtarı ve etiketler gölge kaydın sabit `id` ve `topic`'ini kullanır. Safa'nın memory API'sinde değişiklik gerekmez; step 6 kimseye bloklu değildir. `continueLoopId` = `memory.openLoops()`'tan seçilen entry; devam edilirse yeni gölge hedef `fromLoopId` ile oluşturulur.
-2. **Eski akış kaldırılır.** İrem attention, UI/UX ve agent'ı Safa'nın denemesini temel almadan kuracak (ekip kararı). 5 dk'lık audit, popup ve drift bildirimi yeni akışla değiştirilir; `agent/audit.js` referans olarak kalır, bağlanmaz. `test:e2e` yeni akış için yeniden yazılır (fake model ile: hedef → kayma → overlay → "Take me back"). README'deki klasör sahipliği tablosu güncellenir (`agent/` → İrem).
-3. **Agent service worker'da çalışır; overlay'de serbest metin yok.** Overlay baloncuğunda yalnızca butonlar ve *Talk to me* bulunur; *Talk to me* side panel'i açıp giriş alanına odaklar. Böylece diyalog (LLM#2–#3) side panel bağlamında yürür ve LangGraph kapısı side panel'de test edilir. `composeNudge` (LLM#4) ve `classifyRelevance` (LLM#1) tek atımlık çağrılardır; service worker'da düz fonksiyon olarak çalışır, LangGraph'a ihtiyaç duymaz.
-4. **Hedefler gün sonunda açık döngüye döner.** Bitmemiş bir gölge hedef, yerel saatle yeni günün ilk aktif odağında (gün sınırı 04:00) ya da ≥6 saatlik uzaklıktan sonra `expiredAt` alır; aktif hedef sayılmaz ve `session_start` tetiklenir. Açılış diyaloğu süresi dolan hedefi "dün şurada kalmıştın" olarak memory'nin açık döngüleriyle birlikte sunar. Kural attention'dadır, memory'de değil.
-5. **Geniş host izni kabul edilir.** Overlay'in kayma anında kendiliğinden görünmesi için `scripting` + `<all_urls>` gerekir. Content script yalnızca avatarı çizer; sayfa içeriğini okumaz. Gizlilik ilkesi (yalnızca URL + başlık) değişmez ve README'de açıkça yazılır. Web Store gönderimi isteğe bağlı olduğu için bu bir engel değildir.
+1. **The goal (intent) is kept as a "shadow" record in attention's DB.** `memory.setIntent()` only takes `{title, next}`, hardcodes the topic as `"focus"`, and its id is a content hash (can change during consolidate). So attention's DB has an `intents` store: `{id: uuid (stable), title, steps[], estMin, topic, createdAt, doneAt?, expiredAt?, memoryEntryId?, fromLoopId?}`. For brain compatibility `memory.setIntent()` / `completeIntent()` are still called and the returned id is stored as `memoryEntryId`; the relevance key and labels use the shadow record's stable `id` and `topic`. No change to Safa's memory API is needed; step 6 is not blocked on anyone. `continueLoopId` = an entry picked from `memory.openLoops()`; continuing creates a new shadow goal with `fromLoopId`.
+2. **The old flow is removed.** İrem builds attention, UI/UX and the agent without basing them on Safa's trial (team decision). The 5-minute audit, the popup and the drift notification are replaced by the new flow; `agent/audit.js` stays as reference, not wired. `test:e2e` is rewritten for the new flow (fake model: goal → drift → overlay → "Take me back"). The folder ownership table in the README is updated (`agent/` → İrem).
+3. **Dialogue runs in the side panel; one-shot calls in the service worker; no free text in the overlay.** The overlay bubble has only buttons and *Talk to me*; *Talk to me* opens the side panel and focuses its input. So the dialogue (LLM#2–#3) runs in the side panel context, where the LangGraph gate is tested. `composeNudge` (LLM#4), `classifyRelevance` (LLM#1) and `reflect` (LLM#5) are one-shot calls; they run as plain functions in the service worker and need no LangGraph.
+4. **Goals become open loops at day end.** An unfinished shadow goal gets `expiredAt` on the first active focus of a new local day (day boundary 04:00) or after ≥6 hours away; it no longer counts as active and `session_start` fires. The opening dialogue offers the expired goal as "yesterday you were here", alongside memory's open loops. The rule lives in attention, not in memory.
+5. **A broad host permission is accepted.** For the overlay to appear on its own at drift time, `scripting` + `<all_urls>` are needed. The content script only draws the avatar; it never reads page content. The privacy principle (URL + title only) is unchanged and stated plainly in the README. The Web Store submission is optional, so this is not a blocker.
 
-## 10. İleriye notlar (v1'de yok)
+## 10. Notes for later (not in v1)
 
-- **Belirsiz sayfalar için küçük sayfa parçası.** v1 yalnızca URL + başlık kullanır; genel başlıklı sayfalar ("Inbox – Gmail", "Notion", "Untitled document") nötr sayılır ve etiketlerle öğrenilir. Olay günlüğü belirsiz sayfaların sık olduğunu gösterirse: yalnızca LLM#1 düşük güvenle döndüğünde content script'in `h1` + meta description'ı (≤300 karakter) okuması, ayarlardan açılıp kapanabilir şekilde. Sayfa gövdesi ve e-posta içeriği hiçbir zaman okunmaz.
-- **Avatar görsel tasarımı** ayrı bir oturumda yapılacak; v1 yer tutucu SVG ile ilerler.
-- **Safa'nın MCP sunucusu** (gecikme ölçüldükten sonra) ve **Muse Code bağlantısı** sonraki aşamalar.
+- **A small page snippet for ambiguous pages.** v1 uses URL + title only; pages with generic titles ("Inbox – Gmail", "Notion", "Untitled document") count as neutral and are learned through labels. If the event log shows ambiguous pages are common: only when LLM#1 returns low confidence, the content script reads `h1` + meta description (≤300 chars), behind a settings toggle. Page bodies and email content are never read.
+- **Avatar visual design** in a separate session; v1 uses a placeholder SVG.
+- **Safa's MCP server** (after measuring latency) and the **Muse Code connection** are later stages.
 
-## 11. Builder'a bırakılanlar
+## 11. Left to the builder
 
-- Eşik ve sabitlerin kesin değerleri (replay ile ayarlanır).
-- Başlık normalizasyonu ve ilgi anahtarının site bazında ayrıntısı.
-- Prompt metinleri, persona ifadeleri, şablon mesajlar.
-- Overlay'in konumu, sürükleme, boyutlar; side panel düzeni (avatar görsel kimliği hariç, o ayrıca tasarlanacak).
-- Service worker / side panel arasında mesajlaşma yapısı.
-- Dosya bölümlemesi `attention/` ve `agent/` içinde.
+- Exact thresholds and constants (tuned by replay).
+- Title normalisation and per-site detail of the relevance key.
+- Prompt text, persona wording, template messages.
+- Overlay position, dragging, sizes; side panel layout (except the avatar's visual identity, designed separately).
+- Messaging between the service worker and the side panel.
+- File split inside `attention/` and `agent/`.
+- The JS eval's exact shape (cases as JSONL, graders, baseline file) within `evals/`.
