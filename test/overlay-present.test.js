@@ -18,13 +18,29 @@ const trigger = (kind, level) => ({
   intentTitle: "Fix the bug",
 });
 
-test("L1 drift: Tuck arrives with a welcome hop, settles to resting, says nothing", () => {
-  assert.deepEqual(present({ trigger: trigger("drift", 1) }), {
-    tuck: "welcome",
-    settle: "resting",
-    bubble: null,
-    triggerId: "drift-1",
-  });
+test("L1 drift speaks right away: a check-in wave with the message and the answers", () => {
+  const v = present({ trigger: trigger("drift", 1) });
+  assert.equal(v.tuck, "checkin");
+  assert.equal(v.bubble.kind, "nudge");
+  assert.equal(v.bubble.text, "You've been on youtube.com for 52 s — back to Fix the bug?");
+  assert.deepEqual(
+    v.bubble.buttons.map((b) => b.choice),
+    ["back", "related", "break"],
+  );
+  assert.equal(v.triggerId, "drift-1");
+});
+
+test("on a page the model is unsure about, L1 asks instead", () => {
+  const unsure = { ...trigger("drift", 1), evidence: { ...evidence, unsure: true } };
+  const v = present({ trigger: unsure });
+  assert.equal(v.bubble.text, "Is youtube.com part of Fix the bug?");
+  assert.deepEqual(
+    v.bubble.buttons.map((b) => [b.choice, b.label]),
+    [
+      ["related", "Yes, it's for my task"],
+      ["back", "No, take me back"],
+    ],
+  );
 });
 
 test("L2 and L3 drift: thinking, with the message and the three answers", () => {
