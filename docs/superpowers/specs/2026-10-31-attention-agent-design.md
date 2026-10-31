@@ -242,7 +242,13 @@ Reviewer'ın sorularına verilen, İrem'in onayına açık cevaplar:
 4. **Hedefler gün sonunda açık döngüye döner.** Bitmemiş bir gölge hedef, yerel saatle yeni günün ilk aktif odağında (gün sınırı 04:00) ya da ≥6 saatlik uzaklıktan sonra `expiredAt` alır; aktif hedef sayılmaz ve `session_start` tetiklenir. Açılış diyaloğu süresi dolan hedefi "dün şurada kalmıştın" olarak memory'nin açık döngüleriyle birlikte sunar. Kural attention'dadır, memory'de değil.
 5. **Geniş host izni kabul edilir.** Overlay'in kayma anında kendiliğinden görünmesi için `scripting` + `<all_urls>` gerekir. Content script yalnızca avatarı çizer; sayfa içeriğini okumaz. Gizlilik ilkesi (yalnızca URL + başlık) değişmez ve README'de açıkça yazılır. Web Store gönderimi isteğe bağlı olduğu için bu bir engel değildir.
 
-## 10. Builder'a bırakılanlar
+## 10. İleriye notlar (v1'de yok)
+
+- **Belirsiz sayfalar için küçük sayfa parçası.** v1 yalnızca URL + başlık kullanır; genel başlıklı sayfalar ("Inbox – Gmail", "Notion", "Untitled document") nötr sayılır ve etiketlerle öğrenilir. Olay günlüğü belirsiz sayfaların sık olduğunu gösterirse: yalnızca LLM#1 düşük güvenle döndüğünde content script'in `h1` + meta description'ı (≤300 karakter) okuması, ayarlardan açılıp kapanabilir şekilde. Sayfa gövdesi ve e-posta içeriği hiçbir zaman okunmaz.
+- **Avatar görsel tasarımı** ayrı bir oturumda yapılacak; v1 yer tutucu SVG ile ilerler.
+- **Safa'nın MCP sunucusu** (gecikme ölçüldükten sonra) ve **Muse Code bağlantısı** sonraki aşamalar.
+
+## 11. Builder'a bırakılanlar
 
 - Eşik ve sabitlerin kesin değerleri (replay ile ayarlanır).
 - Başlık normalizasyonu ve ilgi anahtarının site bazında ayrıntısı.
