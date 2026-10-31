@@ -22,7 +22,8 @@ side panel, overlay, options) · `memory/` Safa's, used through the `Memory` API
 | run locally | `chrome://extensions` → Developer mode → Load unpacked → repo root |
 | test — all | `npm test` |
 | test — one | `node --test test/<name>.test.js` |
-| test — integration | `{{...}}` |
+| test — integration | `npm run test:browser && npm run test:e2e` |
+| test — live | `node --env-file=.env test/live/model.mjs` (real API; only when asked) |
 | format | `npx prettier --write <file>` (no lint; never reformat untouched files) |
 | typecheck | none (plain JS) |
 
