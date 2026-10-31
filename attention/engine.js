@@ -77,6 +77,7 @@ function windowStats(s, ts, cfg) {
 function evidence(s, ts, cfg) {
   const entered = s.timeline.at(-1)?.ts ?? ts;
   return {
+    url: s.current?.url ?? "",
     host: s.current?.host ?? "",
     title: s.current?.title ?? "",
     dwellSec: Math.round((ts - entered) / S),
@@ -87,7 +88,8 @@ function evidence(s, ts, cfg) {
 }
 
 function rememberRelated(s, ts) {
-  if (s.current?.label === "related" && !s.current.pending) {
+  // A page with no URL (this extension's own pages) is never a place to go back to.
+  if (s.current?.label === "related" && !s.current.pending && s.current.url) {
     const { tabId, url, title } = s.current;
     s.lastRelevant = { tabId, url, title, ts };
   }
@@ -239,7 +241,13 @@ export function step(prev, input, cfg = DEFAULTS) {
     if (s.lastDriftTs != null) s.policy.episode = null;
     s.lastDriftTs = null;
   }
-  if (s.intent && !s.away && (s.fragFiredTs == null || ts - s.fragFiredTs >= cfg.fragWindowSec * S)) {
+  // One nudge at a time: hopping during a drift is part of that drift.
+  if (
+    core !== "drifting" &&
+    s.intent &&
+    !s.away &&
+    (s.fragFiredTs == null || ts - s.fragFiredTs >= cfg.fragWindowSec * S)
+  ) {
     const w = windowStats(s, ts, cfg);
     if (w.switches >= cfg.fragMinSwitches && w.unrelatedShare >= cfg.fragUnrelatedShare) {
       candidates.push("fragmentation");

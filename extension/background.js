@@ -244,6 +244,7 @@ async function respond({ choice }) {
     const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
     const ts = Date.now();
     const before = await loadEngine();
+    const page = lastTrigger?.evidence; // the page the nudge was about
     const s = await process({
       type: "response",
       ts,
@@ -254,26 +255,28 @@ async function respond({ choice }) {
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
     await setBadge(null);
     if (choice === "back") await takeMeBack(s.lastRelevant);
-    if (choice === "related" && before.current && before.intent) await markRelated(before.current, before.intent, ts);
+    if (choice === "related" && page?.host && before.intent) await markRelated(page, before.intent, ts);
     return { ok: true };
   });
 }
 
-// Focus the last related tab, or reopen its page if the tab is gone.
+// Focus the last related tab, or reopen its page.
 async function takeMeBack(last) {
   if (!last) return;
-  try {
-    const tab = await chrome.tabs.get(last.tabId);
+  const tab = await chrome.tabs.get(last.tabId).catch(() => null);
+  // The tab may be gone, or now showing something else: then reopen the page.
+  if (tab && tab.url === last.url) {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
-  } catch {
+  } else {
     await chrome.tabs.create({ url: last.url, active: true });
   }
 }
 
-async function markRelated(current, intent, ts) {
-  const key = labelKeys(intent.topic, current.url, current.title)[0];
-  const label = { key, label: "related", topic: intent.topic, host: current.host, title: current.title, ts };
+// page: {url, host, title} from the trigger's evidence.
+async function markRelated(page, intent, ts) {
+  const key = labelKeys(intent.topic, page.url, page.title)[0];
+  const label = { key, label: "related", topic: intent.topic, host: page.host, title: page.title, ts };
   await (await store).putLabel(label);
   await log({ type: "feedback", ts, kind: "label", payload: label });
   await (
@@ -281,7 +284,7 @@ async function markRelated(current, intent, ts) {
   ).add({
     kind: "preference",
     topic: intent.topic,
-    title: `${current.host} counts as work for ${intent.topic}`.slice(0, 120),
+    title: `${page.host} counts as work for ${intent.topic}`.slice(0, 120),
     context: "Marked by the user from a nudge.",
     result: "related",
   });

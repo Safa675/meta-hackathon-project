@@ -3,36 +3,54 @@ import { loadModelSettings } from "../../memory/model.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
+const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
 
-const LABEL = { on_track: "On track", drifting: "Drifting", break: "Break", unclear: "Unclear" };
+const STATE = {
+  no_intent: "No goal yet",
+  focused: "Focused",
+  detour: "Short detour",
+  drifting: "Drifting",
+  away: "Away",
+  break: "On a break",
+  paused: "Paused",
+};
 
-function ago(ts) {
-  const min = Math.round((Date.now() - ts) / 60000);
-  return min < 1 ? "just now" : min < 60 ? `${min} min ago` : `${Math.round(min / 60)} h ago`;
+const duration = (sec) => (sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`);
+
+// Template text for each trigger kind. Plan 2 replaces these with the agent's words.
+function triggerText(t) {
+  const goal = t.intentTitle ?? "your goal";
+  const e = t.evidence ?? {};
+  switch (t.kind) {
+    case "drift":
+      return `You've been on ${e.host} for ${duration(e.dwellSec ?? 0)} — back to ${goal}?`;
+    case "fragmentation":
+      return "Lots of tab hopping — want to pick one thing?";
+    case "return":
+      return `Welcome back. You were on ${e.lastRelevant?.title ?? goal}.`;
+    case "break_over":
+      return `Break's over — ready for ${goal}?`;
+    case "session_start":
+      return "What are we working on today?";
+    default:
+      return "";
+  }
 }
 
-async function renderIntent() {
-  const intent = await memory.latestIntent();
+async function render() {
+  const { engine, lastTrigger, intent } = await send("get-status");
   $("intent-view").hidden = !intent;
   $("intent-form").hidden = !!intent;
   if (intent) {
     $("intent-title").textContent = intent.title;
-    $("intent-next").textContent = intent.next && intent.next !== "none" ? `Next: ${intent.next}` : "";
-    $("done").onclick = async () => {
-      await memory.completeIntent(intent.id);
-      renderIntent();
-    };
+    $("intent-next").textContent = intent.steps?.length ? `Next: ${intent.steps[0]}` : "";
   }
-}
-
-function renderVerdict(a) {
-  const pill = $("verdict-pill");
-  if (!a) return;
-  pill.className = `pill ${a.error ? "error" : a.verdict}`;
-  pill.textContent = a.error ? "Error" : LABEL[a.verdict] ?? a.verdict;
-  $("verdict-when").textContent = ago(a.at);
-  $("verdict-reason").textContent = a.error ?? a.reason ?? "";
-  $("verdict-nudge").textContent = a.nudge ?? "";
+  $("mode").value = engine.mode;
+  $("state-pill").textContent = STATE[engine.state] ?? engine.state;
+  $("state-pill").className = `pill ${engine.state}`;
+  const show = lastTrigger && !lastTrigger.respondedAt && lastTrigger.kind !== "session_start";
+  $("trigger").hidden = !show;
+  if (show) $("trigger-text").textContent = triggerText(lastTrigger);
 }
 
 async function renderActivity() {
@@ -46,7 +64,9 @@ async function renderSetup() {
   if (!settings?.apiKey && settings?.provider !== "ollama") missing.push("add a model API key");
   if (!brain.connected) missing.push("connect your brain folder (optional)");
   $("setup").hidden = !missing.length;
-  $("setup").innerHTML = missing.length ? `Set up: ${missing.join(", ")} in <a href="#" id="setup-link">Settings</a>.` : "";
+  $("setup").innerHTML = missing.length
+    ? `Set up: ${missing.join(", ")} in <a href="#" id="setup-link">Settings</a>.`
+    : "";
   $("setup-link")?.addEventListener("click", openSettings);
 }
 
@@ -59,10 +79,15 @@ $("open-settings").onclick = openSettings;
 
 $("intent-form").onsubmit = async (e) => {
   e.preventDefault();
-  await memory.setIntent({ title: $("title").value.trim(), next: $("next").value.trim() || undefined });
+  await send("set-intent", { title: $("title").value.trim(), next: $("next").value.trim() });
   $("title").value = "";
   $("next").value = "";
-  renderIntent();
+  render();
+};
+
+$("done").onclick = async () => {
+  await send("complete-intent");
+  render();
 };
 
 $("change").onclick = () => {
@@ -71,25 +96,23 @@ $("change").onclick = () => {
   $("title").focus();
 };
 
-$("check").onclick = async () => {
-  $("check").disabled = true;
-  $("check").textContent = "Checking…";
-  try {
-    renderVerdict(await chrome.runtime.sendMessage({ type: "audit-now" }));
-    renderActivity();
-  } finally {
-    $("check").disabled = false;
-    $("check").textContent = "Check now";
-  }
+$("mode").onchange = async () => {
+  await send("set-mode", { mode: $("mode").value });
+  render();
 };
 
+const respond = (choice) => async () => {
+  await send("respond", { choice });
+  render();
+};
+$("take-me-back").onclick = respond("back");
+$("for-my-task").onclick = respond("related");
+$("give-me-5").onclick = respond("break");
+
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.lastAudit) renderVerdict(changes.lastAudit.newValue);
+  if (changes.lastTrigger) render();
 });
 
-// Count the popup's own opening as being on the current page.
-chrome.runtime.sendMessage({ type: "record-active" }).catch(() => {});
-renderIntent();
-renderVerdict((await chrome.storage.local.get("lastAudit")).lastAudit);
+render();
 renderActivity();
 renderSetup();

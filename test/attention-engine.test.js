@@ -241,3 +241,13 @@ test("session_start greets the first active page of a day once, only without a g
   assert.deepEqual(kinds([ctx(morning, REPO), ctx(morning + 60 * S, VIDEO)], morning + 70 * S), [morning]);
   assert.deepEqual(kinds([setIntent(morning), ctx(morning, REPO, "related")], morning + 10 * S), []);
 });
+
+test("one nudge at a time: no fragmentation while a drift is running", () => {
+  const X = ["https://x.com/home", "Home / X"];
+  const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated")];
+  // Drift starts at 45 s; then hop between unrelated pages while drifting.
+  [X, VIDEO, X, VIDEO, X, VIDEO, X].forEach((p, i) => inputs.push(ctx(t0 + (50 + i * 5) * S, p, "unrelated")));
+  const { triggers } = run(inputs, { until: t0 + 90 * S });
+  assert.ok(triggers.some((t) => t.kind === "drift"));
+  assert.equal(triggers.filter((t) => t.kind === "fragmentation").length, 0);
+});

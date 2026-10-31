@@ -1,7 +1,8 @@
 // End-to-end: the real extension in Chromium against a local fake model.
-// Tab capture → intent from the popup → "Check now" → drift verdict and badge →
-// the audit alarm firing a notification → "Done". Saves screenshots of the popup
-// and settings page to SCREENSHOT_DIR when set.
+// Goal from the popup → related page → unrelated page → drift trigger, badge and
+// popup card → "Take me back" (also when the related tab was closed) → "This is
+// for my task" silences that page → the exported event log holds it all.
+// Saves screenshots of the popup and settings page to SCREENSHOT_DIR when set.
 import { createRequire } from "node:module";
 import http from "node:http";
 import path from "node:path";
@@ -14,13 +15,14 @@ const root = path.resolve(import.meta.dirname, "../..");
 const shots = process.env.SCREENSHOT_DIR;
 
 // Two "sites" (different hostnames for the same server) and a fake model that
-// calls it drifting when the current page is the video.
+// calls the video unrelated and everything else related.
 const calls = [];
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   if (req.method === "OPTIONS") return res.end();
-  const page = (title) => res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(`<title>${title}</title><p>${title}`);
+  const page = (title) =>
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(`<title>${title}</title><p>${title}`);
   if (req.url === "/repo") return page("cart.js · acme/shop");
   if (req.url === "/video") return page("Top 10 F1 crashes - Video");
   if (req.url !== "/v1/chat/completions") return res.writeHead(404).end();
@@ -29,10 +31,9 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     const { messages } = JSON.parse(body);
     calls.push(messages);
-    const drifting = /Now: Top 10 F1 crashes/.test(messages[1].content);
-    const reply = drifting
-      ? { verdict: "drifting", confidence: 0.85, reason: "Most of the last minutes went to a video, not the checkout bug.", nudge: "Close the video and write the failing test." }
-      : { verdict: "on_track", confidence: 0.9, reason: "Working in the shop repo.", nudge: "" };
+    const reply = /Top 10 F1 crashes/.test(messages.at(-1).content)
+      ? { label: "unrelated", confidence: 0.9, reason: "An F1 video, not the checkout bug." }
+      : { label: "related", confidence: 0.9, reason: "The shop repo." };
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
   });
@@ -55,16 +56,18 @@ const ext = `chrome-extension://${new URL(worker.url()).host}`;
 const errors = [];
 const watch = (p) => p.on("pageerror", (e) => errors.push(String(e)));
 
-// Settings: point the model at the fake server.
+// Settings: the fake model, and short timings so the test runs in seconds. The test
+// hops between tabs to reach the popup, so fragmentation (unit-tested) is off here.
 const settingsPage = await ctx.newPage();
 watch(settingsPage);
 await settingsPage.goto(`${ext}/extension/options/options.html`);
 await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" });
+  await chrome.storage.local.set({ attentionConfig: { toleranceSec: 3, escalateAfterSec: 2, fragMinSwitches: 1000 } });
 }, `http://127.0.0.1:${port}/v1`);
 
-// Popup (opened as a tab): no intent yet, so the form shows. Set one.
+// Popup (opened as a tab): set the goal.
 const popup = await ctx.newPage();
 watch(popup);
 await popup.goto(`${ext}/extension/popup/popup.html`);
@@ -75,52 +78,61 @@ await popup.click("#intent-form button[type=submit]");
 await popup.waitForSelector("#intent-view:not([hidden])");
 const intentShown = await popup.textContent("#intent-title");
 
-// Browse: the repo, then the video. Tab capture records both.
-const tab = await ctx.newPage();
-await tab.goto(repo);
-await tab.waitForTimeout(1200);
-await tab.goto(video);
-await tab.waitForTimeout(1200);
-
-const activity = await popup.evaluate(async () => {
-  const { Memory } = await import("/memory/index.js");
-  const a = await (await Memory.open()).activity({ minutes: 30 });
-  return a.spans.map((s) => s.title);
-});
-
-// "Check now" from the popup.
-await popup.bringToFront();
-await popup.click("#check");
-await popup.waitForSelector("#verdict-pill.drifting, #verdict-pill.error", { timeout: 15000 });
-const verdict = {
-  pill: await popup.textContent("#verdict-pill"),
-  nudge: await popup.textContent("#verdict-nudge"),
-  badge: await popup.evaluate(() => chrome.action.getBadgeText({})),
-};
-const auditPrompt = calls.at(-1)?.[1].content ?? "";
-if (shots) await popup.screenshot({ path: path.join(shots, "popup-drifting.png"), fullPage: true });
-
-// A manual check never notifies; the timer does. Fire the audit alarm now.
-const before = await popup.evaluate(() => chrome.notifications.getAll());
-await popup.evaluate(() => chrome.alarms.create("audit", { when: Date.now() + 500 }));
 // Poll from node: extension pages forbid the eval that waitForFunction polling uses.
-let after = {};
-for (let i = 0; i < 50 && !Object.keys(after).length; i++) {
-  await popup.waitForTimeout(300);
-  after = await popup.evaluate(() => chrome.notifications.getAll());
+const lastTrigger = () => popup.evaluate(async () => (await chrome.storage.local.get("lastTrigger")).lastTrigger);
+async function waitForNewDrift(afterId) {
+  for (let i = 0; i < 60; i++) {
+    const t = await lastTrigger();
+    if (t?.kind === "drift" && t.id !== afterId && !t.respondedAt) return t;
+    await popup.waitForTimeout(250);
+  }
+  throw new Error(`no new drift trigger after ${afterId}`);
+}
+const activeUrl = () =>
+  popup.evaluate(async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.url);
+async function clickOnCard(button) {
+  await popup.bringToFront();
+  await popup.reload();
+  await popup.waitForSelector("#trigger:not([hidden])");
+  const text = await popup.textContent("#trigger-text");
+  await popup.click(button);
+  await popup.waitForTimeout(500);
+  return text;
 }
 
-// Done: the intent clears and the form comes back.
-await popup.click("#done");
-await popup.waitForSelector("#intent-form:not([hidden])");
-const doneEvent = await popup.evaluate(async () => {
-  const { Memory } = await import("/memory/index.js");
-  const hits = await (await Memory.open()).recall("Done Fix the checkout bug");
-  return hits.map((h) => h.title);
-});
+// Browse: the repo, then the video. The model judges each page once.
+const repoTab = await ctx.newPage();
+await repoTab.goto(repo);
+await repoTab.waitForTimeout(1500);
+const videoTab = await ctx.newPage();
+await videoTab.goto(video);
+await videoTab.bringToFront();
+const drift1 = await waitForNewDrift(null);
+const badge = await popup.evaluate(() => chrome.action.getBadgeText({}));
+const cardText = await clickOnCard("#take-me-back");
+if (shots) await popup.screenshot({ path: path.join(shots, "popup-trigger.png"), fullPage: true });
+const backTo = await activeUrl();
 
+// The related tab is gone: "Take me back" reopens its page.
+await videoTab.bringToFront();
+const drift2 = await waitForNewDrift(drift1.id);
+await repoTab.close();
+await clickOnCard("#take-me-back");
+const reopened = await activeUrl();
+
+// "This is for my task" on the video: the next visit stays quiet.
+await videoTab.bringToFront();
+const drift3 = await waitForNewDrift(drift2.id);
+await clickOnCard("#for-my-task");
+await videoTab.bringToFront();
+await videoTab.waitForTimeout(6000);
+const afterLabel = await lastTrigger();
+
+// The exported event log.
+await settingsPage.bringToFront();
+const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
+const types = new Set(log.events.map((e) => e.type));
 if (shots) {
-  await settingsPage.bringToFront();
   await settingsPage.reload();
   await settingsPage.waitForTimeout(500);
   await settingsPage.screenshot({ path: path.join(shots, "settings.png"), fullPage: true });
@@ -132,15 +144,15 @@ fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
 assert.equal(intentShown, "Fix the checkout bug");
-assert.ok(activity.includes("cart.js · acme/shop") && activity.includes("Top 10 F1 crashes - Video"), `activity: ${activity}`);
-assert.match(auditPrompt, /Stated intent \(\d{4}-\d{2}-\d{2}\): Fix the checkout bug; next: Write the failing test/);
-assert.match(auditPrompt, /localhost: (<1|\d+) min/);
-assert.match(auditPrompt, /Now: Top 10 F1 crashes/);
-assert.doesNotMatch(auditPrompt, /chrome-extension:|about:blank/);
-assert.equal(verdict.pill, "Drifting");
-assert.equal(verdict.nudge, "Close the video and write the failing test.");
-assert.equal(verdict.badge, "!");
-assert.deepEqual(before, {});
-assert.ok("drift" in after, `notifications: ${JSON.stringify(after)}`);
-assert.ok(doneEvent.includes("Done: Fix the checkout bug"), `done: ${doneEvent}`);
+assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
+assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
+assert.match(cardText, /localhost/);
+assert.match(cardText, /Fix the checkout bug/);
+assert.equal(backTo, repo);
+assert.equal(reopened, repo);
+assert.equal(afterLabel.id, drift3.id, "no new trigger on a page marked as work");
+assert.equal(afterLabel.choice, "related");
+for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
+  assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
+assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");
 console.log("extension e2e: ok");
