@@ -47,7 +47,7 @@ Judging criteria: creativity, technical ambition, whether it works. So: **the co
 - **Build:** The repo is plain ES modules with no build step. That stays; the only exception is an esbuild bundle for the agent if the LangGraph trial passes (§6.3).
 - **Model:** `muse-spark-1.3-contributor` (repo default, OpenAI-compatible, via `memory/model.js`). If not reachable from Turkey, `muse-spark-1.3`. No Muse Wonder. Budget: $150 API credit.
 - **Memory boundary:** `memory/` is Safa's. Not modified; only the `Memory` API (memory/README.md) is used. Small API additions, if ever needed, are requested from Safa.
-- **Privacy:** URL, title and tab signals only. No page content, no screenshots.
+- **Privacy (v1, under test):** URL, title and tab signals only. No page content, no screenshots. If relevance accuracy cannot meet INTENT.md's criteria from these alone, the signal is extended (§10).
 - **Language:** Code, comments, docs, prompts, template messages, UI text and the demo video are **English**. The companion's voice is minimal and friendly ("Take me back", "Give me 5" — not corporate, not robotic). If the user writes in another language, it answers in that language.
 - **Demo data:** No real brain. The repo ships a fake brain folder for the demo (`demo/brain/`, in brain format; unfinished work and a few notes) and a sample event log (`demo/eventlog.json`). Loaded via brain import and an "import event log" button on the options page; replay tests use the same log. The video can be re-recorded identically from this data.
 
