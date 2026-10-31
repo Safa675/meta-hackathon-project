@@ -261,3 +261,13 @@ Answers to the reviewer's questions, open to İrem's approval:
 - Messaging between the service worker and the side panel.
 - File split inside `attention/` and `agent/`.
 - The JS eval's exact shape (cases as JSONL, graders, baseline file) within `evals/`.
+
+## 12. Addendum (2026-10-31): Tuck on the page
+
+Approved by İrem from a mockup. The avatar is **Tuck** (assets: `extension/tuck/`, from İrem's Tuck v2 paper motion kit): five states — resting, thinking, checkin, welcome, sleeping. Effect colour soft mint `#94BFAE`, body default lilac.
+
+- **Where:** injected into the page in front (`chrome.scripting`), top right, 72 px, in an open Shadow DOM. Reads nothing from the page.
+- **Flow:** L1 drift/fragmentation → slides in with *welcome*, settles to *resting*, no text. L2/L3 → *thinking* + bubble with the message and *Take me back* / *This is for my task* / *5-min break*, and × to dismiss. return / break_over → *checkin* + bubble. Answered or back at work on your own → short *welcome*, slides away after 2 s. DND or break → not on the page.
+- **Getting started on the page:** first active page of the day with no goal (`session_start`) → *checkin* + "Hi! What are we working on today?" with goal and first-step fields, Start, and up to two "Pick up: …" buttons (yesterday's expired goal, then memory's open loops). Start → *welcome* "Got it — let's go", slides away. After Done → "Nice! What's next?" with the same form. Clicking Tuck with no nudge shows the goal with Done / Change. Inputs swallow key presses so site shortcuts don't fire. The popup form stays as a fallback.
+- **Branding:** the extension is named Tuck; toolbar icons are rendered from `tuck.svg`; the popup header shows a resting Tuck.
+- **Calls (Claude's):** message text stays the template text until LLM#4 (Plan 2); goal text is saved as typed until LLM#2 (Plan 2); sleeping Tuck only in the popup.
