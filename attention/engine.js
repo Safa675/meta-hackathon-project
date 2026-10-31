@@ -5,6 +5,7 @@
 import { DEFAULTS } from "./config.js";
 import { isUnsure } from "./relevance.js";
 import { initialPolicy, decide as policyDecide } from "./policy.js";
+import { dayKey } from "./intents.js";
 
 const S = 1000;
 
@@ -103,6 +104,11 @@ function applyContext(s, input, candidates, cfg) {
     candidates.push("return");
   s.away = false;
   s.awaySince = null;
+  const today = dayKey(input.ts, cfg);
+  if (!s.intent && s.sessionDay !== today) {
+    candidates.push("session_start");
+    s.sessionDay = today;
+  }
 
   const out = [];
   const pending = !input.label;

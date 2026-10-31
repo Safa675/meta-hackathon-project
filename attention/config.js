@@ -17,6 +17,7 @@ export const DEFAULTS = Object.freeze({
   dayBoundaryHour: 4,
   expireAwayHours: 6,
   retentionDays: 7,
+  tzOffsetMin: null, // null = the machine's time zone; tests pin it
 });
 
 export function withOverrides(overrides = {}) {

@@ -203,7 +203,10 @@ test("a break holds off drift, then ends with break_over", () => {
 
 test("no intent, no drift", () => {
   const { triggers, state } = run([ctx(t0, VIDEO, "unrelated")], { until: t0 + 120 * S });
-  assert.equal(triggers.length, 0);
+  assert.deepEqual(
+    triggers.filter((t) => t.kind !== "session_start"),
+    [],
+  );
   assert.equal(state.state, "no_intent");
 });
 
@@ -226,4 +229,15 @@ test("Take me back ends the episode and empties the budget", () => {
     { until: t0 + 50 * S },
   );
   assert.equal(state.budgetSec, 0);
+});
+
+test("session_start greets the first active page of a day once, only without a goal", () => {
+  const cfg = { ...CFG, tzOffsetMin: -180 };
+  const morning = Date.UTC(2026, 10, 1, 6, 0); // 09:00 in Istanbul
+  const kinds = (inputs, until) =>
+    run(inputs, { until, cfg })
+      .triggers.filter((t) => t.kind === "session_start")
+      .map((t) => t.ts);
+  assert.deepEqual(kinds([ctx(morning, REPO), ctx(morning + 60 * S, VIDEO)], morning + 70 * S), [morning]);
+  assert.deepEqual(kinds([setIntent(morning), ctx(morning, REPO, "related")], morning + 10 * S), []);
 });
