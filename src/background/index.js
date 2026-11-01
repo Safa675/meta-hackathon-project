@@ -287,7 +287,7 @@ async function judge(need) {
     .map(({ host, title, label }) => ({ host, title, label }));
   let r;
   try {
-    r = await classifyRelevance(modelClient(settings ?? {}), {
+    r = await classifyRelevance(modelClient(privateSettings(settings ?? {})), {
       intent,
       url: need.url,
       title: need.title,
@@ -484,7 +484,7 @@ async function writeDraft(s, level, cfg) {
   const awayMs =
     (s.offTaskSince ? Date.now() - s.offTaskSince : 0) +
     (level === 1 ? cfg.toleranceSec * 1000 : cfg.escalateAfterSec * 1000);
-  const r = await composeNudge(modelClient(settings), {
+  const r = await composeNudge(modelClient(privateSettings(settings)), {
     kind: "drift",
     level,
     site: siteName(s.current.host),
@@ -672,7 +672,7 @@ async function refreshProfile() {
   const settings = await loadModelSettings();
   if (!settings) return { profile: null, source: "no-model" };
   const m = await memory;
-  const r = await buildProfile(modelClient(settings), await m.profileSample());
+  const r = await buildProfile(modelClient(privateSettings(settings)), await m.profileSample());
   if (r.profile) await m.setProfile(r.profile);
   await log({
     type: "llm",
@@ -742,7 +742,7 @@ async function distill() {
   const settings = await loadModelSettings();
   if (!settings) return;
   try {
-    const result = await (await memory).distill(modelClient(settings), { minutes: 60 });
+    const result = await (await memory).distill(modelClient(privateSettings(settings)), { minutes: 60 });
     await chrome.storage.local.set({ lastDistill: { added: result.added, at: Date.now() } });
   } catch (err) {
     await chrome.storage.local.set({ lastDistill: { error: err.message ?? String(err), at: Date.now() } });
