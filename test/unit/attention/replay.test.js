@@ -121,6 +121,7 @@ test("review: recorded typing holds the word in replay, as it did live", () => {
 test("a replay sees the surface logged on the context input", () => {
   const surface = { kind: "conversation", labels: ["Ali Demir"] };
   const chat = page(t0 + 60 * S, "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes", "unrelated");
-  const { triggers } = replay({ version: 1, events: [log.events[0], log.events[1], { ...chat, surface }] }, {});
+  const tick = { type: "tick", ts: t0 + 130 * S }; // replay fills in ticks only up to the last input
+  const { triggers } = replay({ version: 1, events: [log.events[0], log.events[1], { ...chat, surface }, tick] });
   assert.deepEqual(triggers[0].evidence.surface, surface);
 });
