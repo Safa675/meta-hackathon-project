@@ -40,6 +40,10 @@ Never invent an invocation. If a command is missing here, ask for it, then add i
    instead of editing it directly.
 3. **Small diffs.** Do not rewrite, reorganize, or reformat code the task did not require.
 4. **No new files as a side effect.** No extra README, summary, or report unless asked.
+5. **The person's notes never reach Contributor.** Meta may train on what
+   `muse-spark-1.3-contributor` is sent, and it is the default preset. Any model call
+   carrying memory content goes through `withoutContributor()` from `src/memory/model.js`.
+   <!-- enforced by: nothing yet (test/unit/memory/model.test.js covers the helper only) -->
 
 ## Workflow
 

@@ -19,6 +19,25 @@ export const PROVIDERS = {
   nebius: { baseUrl: "https://api.tokenfactory.us-north1.nebius.com/v1", model: "meta-models/muse-spark-open" },
 };
 
+const CONTRIBUTOR = /-contributor$/;
+
+// Meta may train on what Contributor is sent, and Contributor is the default preset.
+// Anything carrying the person's own notes — their profile, their commitments, the
+// excerpts a check-in reads — goes through here first, which swaps the Contributor
+// model for its plain twin. Every other provider is returned untouched. The swap is
+// on the resolved model id, not the preset name, so a hand-typed "-contributor"
+// model under the "meta" preset is caught as well.
+export function withoutContributor(settings = {}) {
+  const provider = settings.provider ?? DEFAULT_PROVIDER;
+  const model = settings.model ?? PROVIDERS[provider]?.model;
+  if (!model || !CONTRIBUTOR.test(model)) return settings;
+  return {
+    ...settings,
+    provider: provider === "meta-contributor" ? "meta" : provider,
+    model: model.replace(CONTRIBUTOR, ""),
+  };
+}
+
 export function resolveConfig({ provider = DEFAULT_PROVIDER, baseUrl, model, apiKey } = {}) {
   const p = PROVIDERS[provider] ?? {};
   const config = { baseUrl: (baseUrl ?? p.baseUrl ?? "").replace(/\/$/, ""), model: model ?? p.model, apiKey };

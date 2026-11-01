@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { modelClient, resolveConfig, PROVIDERS } from "../../../src/memory/model.js";
+import { modelClient, resolveConfig, withoutContributor, PROVIDERS } from "../../../src/memory/model.js";
 
 const fakeFetch =
   (status, body, seen = []) =>
@@ -64,4 +64,34 @@ test("HTTP errors surface with status; the key is not in the message", async () 
 test("a reply without message content is an error", async () => {
   const complete = modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, { choices: [] }));
   await assert.rejects(complete([]), /no message content/);
+});
+
+test("the Contributor model is swapped out for anything that reads the notes", () => {
+  // Meta may train on Contributor inputs, and it is the default preset.
+  assert.deepEqual(withoutContributor({ provider: "meta-contributor", apiKey: "k" }), {
+    provider: "meta",
+    model: "muse-spark-1.3",
+    apiKey: "k",
+  });
+  assert.equal(
+    resolveConfig(withoutContributor({ provider: "meta-contributor", apiKey: "k" })).model,
+    "muse-spark-1.3",
+  );
+});
+
+test("a hand-typed Contributor model is caught too, whatever the preset says", () => {
+  const swapped = withoutContributor({ provider: "meta", model: "muse-spark-1.3-contributor", apiKey: "k" });
+  assert.equal(swapped.model, "muse-spark-1.3");
+  assert.equal(swapped.provider, "meta");
+});
+
+test("every other provider is handed back untouched", () => {
+  for (const provider of ["meta", "ollama", "together", "fireworks", "groq", "openrouter"]) {
+    const settings = { provider, apiKey: "k" };
+    assert.equal(withoutContributor(settings), settings, provider);
+  }
+});
+
+test("no preset at all still resolves away from Contributor, because that is the default", () => {
+  assert.equal(withoutContributor({ apiKey: "k" }).model, "muse-spark-1.3");
 });

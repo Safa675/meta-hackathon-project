@@ -3,7 +3,7 @@
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
 import { Memory } from "../memory/index.js";
-import { modelClient, loadModelSettings } from "../memory/model.js";
+import { modelClient, loadModelSettings, withoutContributor } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable, isUnsure } from "../attention/relevance.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
@@ -261,7 +261,7 @@ async function judge(need) {
     .map(({ host, title, label }) => ({ host, title, label }));
   let r;
   try {
-    r = await classifyRelevance(modelClient(settings ?? {}), {
+    r = await classifyRelevance(modelClient(withoutContributor(settings ?? {})), {
       intent,
       url: need.url,
       title: need.title,
@@ -339,7 +339,7 @@ async function writeDraft(s, level, cfg) {
   const awayMs =
     (s.offTaskSince ? Date.now() - s.offTaskSince : 0) +
     (level === 1 ? cfg.toleranceSec * 1000 : cfg.escalateAfterSec * 1000);
-  const r = await composeNudge(modelClient(settings), {
+  const r = await composeNudge(modelClient(withoutContributor(settings)), {
     kind: "drift",
     level,
     site: siteName(s.current.host),
@@ -515,7 +515,7 @@ async function refreshProfile() {
   const settings = await loadModelSettings();
   if (!settings) return { profile: null, source: "no-model" };
   const m = await memory;
-  const r = await buildProfile(modelClient(settings), await m.profileSample());
+  const r = await buildProfile(modelClient(withoutContributor(settings)), await m.profileSample());
   if (r.profile) await m.setProfile(r.profile);
   await log({
     type: "llm",
@@ -585,7 +585,7 @@ async function distill() {
   const settings = await loadModelSettings();
   if (!settings) return;
   try {
-    const result = await (await memory).distill(modelClient(settings), { minutes: 60 });
+    const result = await (await memory).distill(modelClient(withoutContributor(settings)), { minutes: 60 });
     await chrome.storage.local.set({ lastDistill: { added: result.added, at: Date.now() } });
   } catch (err) {
     await chrome.storage.local.set({ lastDistill: { error: err.message ?? String(err), at: Date.now() } });
