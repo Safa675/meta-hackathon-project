@@ -42,6 +42,24 @@ export function labelKeys(topic, url, title) {
     : [`${topic}|${host}`];
 }
 
+// "This is for my task". A title label (TITLE_SENSITIVE hosts) lasts. A whole-site
+// label says "this visit is work", not "this site is always work": it lasts
+// cfg.labelMin minutes, and for good only once given on cfg.labelDays different days.
+// day: the local day of ts (intents.js dayKey).
+export function nextLabel(prev, { key, topic, host, title, ts, day }, cfg) {
+  const days = [...new Set([...(prev?.days ?? []), day])];
+  const lasting = TITLE_SENSITIVE.includes(host) || days.length >= cfg.labelDays;
+  return { key, label: "related", topic, host, title, ts, days, until: lasting ? null : ts + cfg.labelMin * 60 * 1000 };
+}
+
+export function labelHolds(label, now) {
+  if (!label) return false;
+  if (TITLE_SENSITIVE.includes(label.host)) return true;
+  // A site label saved before labels expired came from one click: it no longer holds.
+  if (!label.days) return false;
+  return label.until == null || now < label.until;
+}
+
 const NEUTRAL_SCHEMES = ["about:", "chrome:", "edge:", "chrome-extension:"];
 const NEUTRAL_PAGES = [
   (u) => u.hostname === "www.google.com" && u.pathname === "/search",

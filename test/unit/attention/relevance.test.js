@@ -9,6 +9,8 @@ import {
   builtinLabel,
   isUnsure,
   cacheUsable,
+  nextLabel,
+  labelHolds,
 } from "../../../src/attention/relevance.js";
 
 test("normalizeTitle drops notification counters, extra spaces and case", () => {
@@ -70,4 +72,58 @@ test("minor 8: a fallback answer is cached briefly, a model answer for good", ()
   assert.equal(cacheUsable({ source: "fallback", ts: now - 60 * 1000 }, now), true);
   assert.equal(cacheUsable({ source: "fallback", ts: now - 3 * 60 * 1000 }, now), false);
   assert.equal(cacheUsable(undefined, now), false);
+});
+
+// ---- "This is for my task" (issue #5) ----------------------------------------
+
+const MIN = 60 * 1000;
+const at = Date.UTC(2026, 10, 1, 9, 0);
+const site = (prev, ts, day) =>
+  nextLabel(
+    prev,
+    { key: "pitch|linkedin.com", topic: "pitch", host: "linkedin.com", title: "Feed | LinkedIn", ts, day },
+    DEFAULTS,
+  );
+
+test("a whole-site label is for this visit: it lasts labelMin minutes", () => {
+  const l = site(null, at, "2026-11-01");
+  assert.equal(l.until, at + DEFAULTS.labelMin * MIN);
+  assert.ok(labelHolds(l, at + 29 * MIN));
+  assert.ok(!labelHolds(l, at + 30 * MIN));
+});
+
+test("a whole-site label lasts for good once given on labelDays different days", () => {
+  let l = site(null, at, "2026-11-01");
+  l = site(l, at + 60 * MIN, "2026-11-01"); // same day again: still one day
+  assert.deepEqual(l.days, ["2026-11-01"]);
+  assert.notEqual(l.until, null);
+  l = site(l, at + 24 * 60 * MIN, "2026-11-02");
+  assert.notEqual(l.until, null);
+  l = site(l, at + 48 * 60 * MIN, "2026-11-03");
+  assert.equal(l.until, null);
+  assert.ok(labelHolds(l, at + 365 * 24 * 60 * MIN));
+});
+
+test("a title label (YouTube and the like) lasts from the first click", () => {
+  const l = nextLabel(
+    null,
+    {
+      key: "pitch|youtube.com|demo tips",
+      topic: "pitch",
+      host: "youtube.com",
+      title: "Demo tips",
+      ts: at,
+      day: "2026-11-01",
+    },
+    DEFAULTS,
+  );
+  assert.equal(l.until, null);
+  assert.ok(labelHolds(l, at + 365 * 24 * 60 * MIN));
+});
+
+test("labels saved before they expired: a site label no longer holds, a title label does", () => {
+  const old = { key: "pitch|linkedin.com", label: "related", topic: "pitch", host: "linkedin.com", ts: at };
+  assert.ok(!labelHolds(old, at));
+  assert.ok(labelHolds({ ...old, key: "pitch|youtube.com|x", host: "youtube.com" }, at));
+  assert.ok(!labelHolds(undefined, at));
 });

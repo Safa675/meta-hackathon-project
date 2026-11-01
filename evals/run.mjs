@@ -1,6 +1,7 @@
 // Relevance eval (LLM#1): runs every case in evals/relevance/cases.jsonl against the
 // real model and checks the INTENT.md thresholds. Run with `npm run eval`
-// (loads MODEL_API_KEY from .env). Environment:
+// (loads MODEL_API_KEY from .env). A case with an `excerpt` runs the second look's
+// prompt (site, title and a page excerpt). Environment:
 //   MODEL_API_KEY   required
 //   MODEL_PROVIDER  meta-contributor (default) | meta | ...
 //   MODEL_BASE_URL, MODEL_ID  optional overrides

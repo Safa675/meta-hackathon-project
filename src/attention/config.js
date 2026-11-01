@@ -16,6 +16,15 @@ export const DEFAULTS = Object.freeze({
   maxGapSec: 120, // a longer silence between inputs is time away (sleep, crash)
   breakMin: 5,
   relevanceRetrySec: 30, // ask the model again if an answer never came (worker died mid-call)
+  secondLook: true, // look at a page again before a drift word about it (typing? an excerpt)
+  lookLeadSec: 15, // read the excerpt ahead this long before the tolerance runs out
+  lookTimeoutSec: 20, // no answer by then (worker died): the word goes ahead without it
+  holdSec: 120, // typing on the page: wait this long, then look again
+  maxHolds: 2, // per drift; then the word comes anyway (the first one at L1)
+  lookHoldMin: 5, // an excerpt's verdict counts for the page this long
+  typingRecentSec: 60, // a key pressed this recently, with the focus in a text field = typing
+  labelMin: 30, // "This is for my task" on a whole site lasts this long…
+  labelDays: 3, // …until it has been given on this many different days
   dayBoundaryHour: 4,
   expireAwayHours: 6,
   retentionDays: 7,

@@ -30,6 +30,12 @@ export function initialState() {
     fragFiredTs: null,
     policy: initialPolicy(),
     tolerance: {},
+    look: null, // the second look for the next drift word: {key, askedTs, answer}
+    lookWaitSince: null, // when the next drift word started waiting for a look
+    readAheadKey: null, // the page whose excerpt the background was asked to read ahead
+    holds: 0, // holds in this drift because the person was typing
+    holdUntil: null,
+    holdKey: null, // the page the person was typing on
   };
 }
 
@@ -92,8 +98,9 @@ function evidence(s, ts, cfg) {
 }
 
 function rememberRelated(s, ts) {
-  // A page with no URL (this extension's own pages) is never a place to go back to.
-  if (s.current?.label === "related" && !s.current.pending && s.current.url) {
+  // A page with no URL (this extension's own pages) is never a place to go back to, nor
+  // one that is work only by what its excerpt said (a chat on a feed page).
+  if (s.current?.label === "related" && !s.current.pending && s.current.url && s.current.source !== "look") {
     const { tabId, url, title } = s.current;
     s.lastRelevant = { tabId, url, title, ts };
   }
@@ -140,6 +147,7 @@ function applyContext(s, input, candidates, cfg) {
     label: pending ? (same?.label ?? "neutral") : input.label,
     confidence: pending ? (same?.confidence ?? 0) : (input.confidence ?? 1),
     pending: pending ? (same ? same.pending : true) : false,
+    source: pending ? (same?.source ?? null) : (input.source ?? null),
   };
   const askedAt = s.asked[input.key];
   if (s.intent && s.current.pending && (askedAt == null || input.ts - askedAt >= cfg.relevanceRetrySec * S)) {
@@ -160,7 +168,12 @@ function applyContext(s, input, candidates, cfg) {
 function applyRelevance(s, input) {
   delete s.asked[input.key];
   if (s.current?.key !== input.key) return;
-  Object.assign(s.current, { label: input.label, confidence: input.confidence, pending: false });
+  Object.assign(s.current, {
+    label: input.label,
+    confidence: input.confidence,
+    pending: false,
+    source: input.source ?? null,
+  });
   const last = s.timeline.at(-1);
   if (last?.key === input.key) last.label = input.label;
   rememberRelated(s, input.ts);
@@ -189,7 +202,7 @@ function applyResponse(s, input, cfg) {
   // The nudged page; the person may have moved on since (pageUrl absent: the page in front).
   const nudgedIsCurrent = !input.pageUrl || input.pageUrl === s.current?.url;
   if (input.choice === "related" && s.current && nudgedIsCurrent) {
-    Object.assign(s.current, { label: "related", confidence: 1, pending: false });
+    Object.assign(s.current, { label: "related", confidence: 1, pending: false, source: "label" });
     const last = s.timeline.at(-1);
     if (last?.key === s.current.key) last.label = "related";
     rememberRelated(s, input.ts);
@@ -197,6 +210,62 @@ function applyResponse(s, input, cfg) {
   if (input.choice === "break") s.breakUntil = input.ts + cfg.breakMin * 60 * S;
   if (input.choice === "dismiss" && s.policy.episode)
     s.policy.cooldownUntil[s.policy.episode.kind] = input.ts + cfg.cooldownSec * S;
+}
+
+// ---- The second look -------------------------------------------------------
+// URL and title cannot tell a work chat from a feed on the same page. Before a drift
+// word about a page the background looks at it again (background/index.js secondLook):
+// is the person typing there right now, and what does a short excerpt say. The excerpt
+// takes a model call, so it is read ahead, a little before the tolerance runs out
+// (`read_ahead`); a "related" verdict then ends the detour before any word. Typing is
+// checked fresh for every drift word, when it is due (`need_second_look`). Answers are
+// inputs, so a recorded log replays exactly.
+
+const looking = (s, cfg) => cfg.secondLook && !["dnd", "off"].includes(s.mode);
+
+function requestLook(s, ts, out) {
+  const c = s.current;
+  s.look = { key: c.key, askedTs: ts, answer: null };
+  out.push({ type: "need_second_look", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+}
+
+function applySecondLook(s, input, cfg) {
+  // An answer for a page already left changes nothing.
+  if (s.look?.key === input.key)
+    s.look.answer = { composing: !!input.composing, label: input.label ?? null, confidence: input.confidence ?? 0 };
+  // The excerpt shows work (read ahead or at the word): the page counts as related, but
+  // is no place to go back to.
+  if (input.label === "related" && (input.confidence ?? 0) >= cfg.unsureConfidence && s.current?.key === input.key) {
+    Object.assign(s.current, { label: "related", confidence: input.confidence, pending: false, source: "look" });
+    const last = s.timeline.at(-1);
+    if (last?.key === input.key) last.label = "related";
+  }
+}
+
+// May the drift word that is due be said now? Waits for the look at the page in front,
+// and holds while the person is typing there, at most cfg.maxHolds times per drift.
+function lookAllows(s, ts, cfg) {
+  if (!looking(s, cfg)) return true;
+  if (s.holdUntil != null) {
+    if (ts < s.holdUntil) return false;
+    s.holdUntil = null;
+  }
+  const a = s.look?.key === s.current.key ? s.look.answer : null;
+  if (!a) {
+    // One wait per word, however many pages pass meanwhile (hopping faster than the
+    // model answers, or a worker that died): then the word goes ahead.
+    s.lookWaitSince ??= ts;
+    return ts - s.lookWaitSince >= cfg.lookTimeoutSec * S;
+  }
+  if (a.composing && s.holds < cfg.maxHolds) {
+    s.holds += 1;
+    s.holdUntil = ts + cfg.holdSec * S;
+    s.holdKey = s.current.key;
+    s.look = null; // look again when the hold ends
+    s.lookWaitSince = null;
+    return false;
+  }
+  return true;
 }
 
 export function step(prev, input, cfg = DEFAULTS) {
@@ -232,6 +301,7 @@ export function step(prev, input, cfg = DEFAULTS) {
   else if (input.type === "relevance") applyRelevance(s, input);
   else if (input.type === "session") applySession(s, input);
   else if (input.type === "response") applyResponse(s, input, cfg);
+  else if (input.type === "second_look") applySecondLook(s, input, cfg);
 
   if (s.breakUntil != null && ts >= s.breakUntil) {
     s.breakUntil = null;
@@ -258,10 +328,36 @@ export function step(prev, input, cfg = DEFAULTS) {
     });
 
   // 4. What might deserve a word.
+  if (core !== "detour" && core !== "drifting") {
+    s.look = null;
+    s.lookWaitSince = null;
+    s.readAheadKey = null;
+    s.holds = 0;
+    s.holdUntil = null;
+  }
+  // A hold is for typing on that page: another page ends it.
+  if (s.holdUntil != null && s.holdKey !== s.current?.key) s.holdUntil = null;
+  const offTask = core === "detour" || core === "drifting";
+  if (
+    offTask &&
+    looking(s, cfg) &&
+    s.readAheadKey !== s.current.key &&
+    s.budgetSec >= effectiveTolerance(s, cfg) - cfg.lookLeadSec
+  ) {
+    const c = s.current;
+    s.readAheadKey = c.key;
+    out.push({ type: "read_ahead", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+  }
   if (core === "drifting") {
-    if (s.lastDriftTs == null || ts - s.lastDriftTs >= cfg.escalateAfterSec * S) {
+    // Every drift word is looked at first, when it is due: typing then is what counts.
+    const due = s.lastDriftTs == null || ts - s.lastDriftTs >= cfg.escalateAfterSec * S;
+    const holding = s.holdUntil != null && ts < s.holdUntil;
+    if (due && looking(s, cfg) && !holding && s.look?.key !== s.current.key) requestLook(s, ts, out);
+    if (due && lookAllows(s, ts, cfg)) {
       candidates.push("drift");
       s.lastDriftTs = ts;
+      s.look = null;
+      s.lookWaitSince = null;
     }
   } else {
     if (s.lastDriftTs != null) s.policy.episode = null;
@@ -299,6 +395,13 @@ export function nextWakeAt(s, cfg = DEFAULTS) {
   if (s.breakUntil != null) times.push(s.breakUntil);
   const core = coreState(s, s.lastTs, cfg);
   if (core === "detour") times.push(s.lastTs + (effectiveTolerance(s, cfg) - s.budgetSec) * S);
-  if (core === "drifting" && s.lastDriftTs != null) times.push(s.lastDriftTs + cfg.escalateAfterSec * S);
+  // Times already past are done with or blocked (a read-ahead sent at the last step, an
+  // escalation waiting for its look or a hold, a timeout): waking for them would loop.
+  const pending = (t) => t != null && t > s.lastTs && times.push(t);
+  if (core === "drifting" && s.lastDriftTs != null) pending(s.lastDriftTs + cfg.escalateAfterSec * S);
+  if (core === "detour" && looking(s, cfg) && s.readAheadKey !== s.current?.key)
+    pending(s.lastTs + (effectiveTolerance(s, cfg) - cfg.lookLeadSec - s.budgetSec) * S);
+  if (core === "drifting" && s.lookWaitSince != null) pending(s.lookWaitSince + cfg.lookTimeoutSec * S);
+  pending(s.holdUntil);
   return times.length ? Math.min(...times) : null;
 }

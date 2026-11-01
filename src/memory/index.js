@@ -9,6 +9,10 @@ import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
 import { readBrainFolder, writeInboxEntry, permission } from "./connector.js";
 
+// Secret-shaped strings (keys, tokens, "password: …") replaced by [REDACTED]: for any
+// text that leaves the device, such as a page excerpt. Returns { text, count }.
+export { redact } from "./consolidate.js";
+
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 const today = () => new Date().toISOString().slice(0, 10);

@@ -1,7 +1,7 @@
 # Intent — Focus Companion
 
 Status: active
-Last revised: 2026-10-31
+Last revised: 2026-11-01
 
 ## Problem
 
@@ -57,20 +57,21 @@ medical or therapeutic help.
 - **Constraint:** Meta models (`muse-spark-1.3-contributor`, else `muse-spark-1.3`).
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
 - **Constraint:** everything in English; the companion answers in the user's language.
-- **Constraint (v1, under test):** relevance is judged from URL and title only — no page
-  content, no screenshots. This is a hypothesis, not a rule: if the relevance-accuracy
-  and "it actually helps" criteria cannot be met from URL and title, the page cannot be
-  interpreted well enough, and the signal is extended (design §10: a small page snippet
-  when confidence is low), sized by the accuracy gap.
+- **Constraint:** relevance is judged from URL and title; before a drift word about a page,
+  a second look checks whether the person is typing there and reads a short excerpt near
+  where they work (redacted, sent to a model that does not train on it, never kept; never
+  on pages with a password field or on the never-read sites; can be turned off). No
+  screenshots. URL and title alone could not tell a work chat from a feed on one site
+  (issue #5).
 - **Non-goal:** system-wide or desktop monitoring — the MVP stays in the browser.
 - **Non-goal:** Safa's MCP server and the Muse Code connection — later stages.
 - **Non-goal:** Chrome Web Store publication — optional bonus only.
 
 ## Open questions
 
-- Is URL + title enough to judge relevance? — settled by the relevance-accuracy eval and
-  the share of `neutral`/low-confidence records in the event log; if not, extend the
-  signal (see the v1 constraint above).
+- How often does the second look turn a drift into work, and is it right? — settled by
+  the `second_look` records in a few days of the event log and the excerpt cases in the
+  relevance eval.
 - What intervention speed is right (trigger → bubble, trigger → LLM text)? — settled by
   trying the overlay in real use and measuring latencies from the event log.
 - What return rate after a nudge counts as "it helps"? — settled by a few days of the
