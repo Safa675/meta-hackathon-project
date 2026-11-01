@@ -229,3 +229,15 @@ test("at most five notes", () => {
   const hits = Array.from({ length: 8 }, (_, i) => entry(`Note ${i}`, "About Deniz."));
   assert.equal(notesAbout(hits, { title: "x", host: "a.com", name: "Deniz" }).length, 5);
 });
+
+test("the cut still holds the match when folding shifts a Turkish note's positions", () => {
+  const before = "İİı şğüöç ".repeat(5000);
+  const text = `${before}Deniz Kaya ile çalışıyoruz. ${"son ".repeat(5000)}`;
+  const [note] = notesAbout([{ title: "Proje günlüğü", item: { text } }], {
+    title: "x",
+    host: "a.com",
+    name: "Deniz Kaya",
+  });
+  assert.match(note.text, /Deniz Kaya ile çalışıyoruz/);
+  assert.ok(note.text.length <= 1500);
+});

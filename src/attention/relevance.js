@@ -100,14 +100,14 @@ const wordsOf = (s = "") =>
     .filter((w) => w.length > 2 && !COMMON.has(w));
 
 // A plain note can run to hundreds of thousands of characters: the part around the word
-// that matched, so the model sees why it was found.
+// that matched, so the model sees why it was found. Folding the whole text once can shift
+// positions by a few characters (İ, decomposed letters); a centred window absorbs that.
 function around(text, words, chars) {
   if (text.length <= chars) return text;
-  const units = [...text];
-  const folded = units.map((c) => foldText(c)[0] ?? c).join("");
+  const folded = foldText(text);
   const at = Math.min(...words.map((w) => folded.indexOf(w)).filter((i) => i >= 0), Infinity);
   const start = at === Infinity ? 0 : Math.max(0, at - Math.floor(chars / 2));
-  return units.slice(start, start + chars).join("");
+  return text.slice(start, start + chars);
 }
 
 // hits: memory.recall() results. In a conversation a note must name the person. On a page
