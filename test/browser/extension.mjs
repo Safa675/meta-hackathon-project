@@ -103,6 +103,11 @@ const server = http.createServer((req, res) => {
     return res
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
       .end(`<title>Chat API docs</title><main><h2>Was this helpful?</h2><textarea id="feedback"></textarea></main>`);
+  // A page the fake model is unsure about.
+  if (req.url === "/maybe")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(`<title>Maybe work</title><main>Hm.</main>`);
   // The full messaging page: no dialog, the box is in the main area.
   if (req.url === "/messaging/thread/1")
     return res
@@ -152,9 +157,11 @@ const server = http.createServer((req, res) => {
         ? /checkout/.test(excerpt)
           ? { label: "related", confidence: 0.9, reason: "A chat about the checkout bug." }
           : { label: "unrelated", confidence: 0.9, reason: "Not about the checkout bug." }
-        : /Top 10 F1 crashes|\| Social/.test(messages.at(-1).content)
-          ? { label: "unrelated", confidence: 0.9, reason: "Not the checkout bug." }
-          : { label: "related", confidence: 0.9, reason: "The shop repo." };
+        : /Maybe work/.test(messages.at(-1).content)
+          ? { label: "unrelated", confidence: 0.4, reason: "Hard to tell." }
+          : /Top 10 F1 crashes|\| Social/.test(messages.at(-1).content)
+            ? { label: "unrelated", confidence: 0.9, reason: "Not the checkout bug." }
+            : { label: "related", confidence: 0.9, reason: "The shop repo." };
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
   });
 });
@@ -469,7 +476,27 @@ const askedBefore = calls.length;
 await settingsPage.evaluate(async () => {
   const { Memory } = await import("/memory/index.js");
   const memory = await Memory.open();
+  const iso = (d) => new Date(d - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const today = iso(Date.now());
   await memory.importFiles([
+    {
+      path: "notes/log/2026/visa.md",
+      text: [
+        "---",
+        'title: "Send the visa papers"',
+        "kind: todo",
+        "topic: errands",
+        `date: ${iso(Date.now() - 86400000)}`,
+        "source: test",
+        "id: visa01",
+        "---",
+        "",
+        "- **Context:** The consulate wants them.",
+        "- **Decision/Result:** Papers are ready.",
+        "- **Evidence:** none",
+        `- **Next action:** Post them, deadline ${today}`,
+      ].join("\n"),
+    },
     {
       path: "notes/log/2026/note.md",
       text: [
@@ -517,6 +544,37 @@ const driftOff = await waitForNewDrift(driftKnownFeed.id);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 const afterDone = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
+
+// A finished goal is a natural moment: Tuck names what is due, once, and "Done" holds (#10).
+const answer = chatTab.locator('[data-reminder="done"]');
+await answer.waitFor({ state: "attached" });
+const reminderText = await chatTab.locator("#tuck-companion .reminder").innerText();
+if (shots) await chatTab.screenshot({ path: path.join(shots, "tuck-reminder.png") });
+const loopsAfterSaid = await popup.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+await answer.click();
+await chatTab.waitForTimeout(300);
+const loopsAfterDone = await popup.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await chatTab.waitForTimeout(500);
+const reminderAgain = await chatTab.locator('[data-reminder="done"]').count();
+
+// "No, take me back" on a page Tuck was unsure about is remembered, and settings forget it.
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
+const maybeTab = await ctx.newPage();
+await maybeTab.goto(`http://localhost:${port}/maybe`);
+await maybeTab.bringToFront();
+const driftMaybe = await waitForNewDrift(driftOff.id);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "back" }));
+const learned = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
+await maybeTab.close();
+await settingsPage.reload();
+await settingsPage.locator("#label-list button").first().waitFor();
+const labelLines = await settingsPage.locator("#label-list").innerText();
+await settingsPage.locator("#label-list button").first().click();
+await settingsPage.waitForTimeout(300);
+const learnedAfter = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 
 // The exported event log.
 await settingsPage.bringToFront();
@@ -640,6 +698,16 @@ assert.ok(
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
+assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
+assert.match(reminderText, /Send the visa papers/);
+assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
+assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
+assert.equal(reminderAgain, 0, "and it does not come back");
+assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
+const no = learned.find((l) => l.label === "unrelated");
+assert.equal(no?.host, "localhost", "the no is remembered");
+assert.match(labelLines, /localhost.*not work/, "settings shows what was learned");
+assert.ok(learnedAfter.length < learned.length, "and can forget it");
 assert.equal(selfReturn.id, drift5.id);
 assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
 assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");

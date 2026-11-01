@@ -6,6 +6,12 @@
 
 ## Decided
 
+**"Take me back" teaches only as the answer to Tuck's question; labels can be forgotten in settings (2026-11-01, issue #8).**
+Counting every "Take me back" was the plan, but the button only appears on a page already judged unrelated, so it adds little, and a page wrongly marked as work never gets a nudge to answer. So a no on a page Tuck was unsure about is remembered at once, and settings list what was learned. A later yes replaces the no, and it does not speak for a conversation on that page.
+
+**Reminders name what is due at moments that already exist, in a fixed line (2026-11-01, issue #10).**
+Urgency changes what Tuck says, never how often it interrupts: a greeting, a return, a break's end and a finished goal, once per task per day. The notes have no way to mark a task done, so "done" is kept in the extension by entry id. A line a template can write needs no model call.
+
 **Notes reach the page decision through memory's search, with no second form (2026-11-01, issues #8, #6).**
 The notes are already distilled, so a facts layer on top of them would repeat that work. The canonical form is their own record; other sources become entries once, at import, in #6. The search finds candidates in code, with up to 5 notes going to the model for that page or person: the model is stateless, so sending every note means sending them all on every call, and the search alone also matches another Ali or a "Create post" dialog. It costs one model call per page or person with matching notes, and a replay cannot show two memories, so that scene is tested end to end.
 

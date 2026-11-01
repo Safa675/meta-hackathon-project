@@ -53,6 +53,7 @@ export async function openStore(name = "attention") {
       }),
     getLabel: (key) => get("labels", key),
     putLabel: (label) => put("labels", label),
+    deleteLabel: (key) => tx(db, "labels", "readwrite", (s) => s.delete(key)),
     recentLabels: async (n) => {
       const all = await tx(db, "labels", "readonly", (s) => s.getAll());
       return all.sort((a, b) => b.ts - a.ts).slice(0, n);

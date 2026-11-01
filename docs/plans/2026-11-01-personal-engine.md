@@ -49,8 +49,8 @@ At a natural moment -> pickReminder (pure) -> line + three answers
 - **`notesFor`** in `src/background/index.js`: `memory.recall` finds candidates on any word, and `notesAbout` (`src/attention/relevance.js`) keeps the notes that name the person, or the site, or two title words. Up to 5, redacted; entries whole, plain notes cut around the match. The goal stays out of the query, so a page nothing is known about keeps the plain prompt. Goes through `privateSettings()` (`AGENTS.md` rule 5).
 - **`NOTES_RULE`** in `src/agent/relevance.js`: added to the system prompt only when notes were found.
 - **Memory changes:** the options page sends `memory-changed`. The worker clears the relevance cache and feeds a `session` input of kind `memory`, so the page in front is judged again. Memory's own reads notice the import (#20).
-- **Two-way labels:** `nextLabel` and `labelHolds` gain `against` days. "Take me back" adds one. A label lasts once its side has `labelDays` different days and more days than the other.
-- **`pickReminder`:** new `src/attention/reminders.js`; state `loops` in `chrome.storage.local`, by entry id, so "done" survives a re-import; `doneAt` also filters `dueSoon`.
+- **Remembered answers, not two-way learning:** "Take me back" only appears on a page already judged unrelated, so counting it teaches almost nothing, and a page wrongly marked as work never gets the button. So only "No, take me back" on a page Tuck was unsure about is remembered, and settings list what was learned and can forget it.
+- **`pickReminder`:** `src/attention/reminders.js`; state `loops` in `chrome.storage.local`, by entry id, so "done" survives a re-import; it also filters `dueSoon` and the "Pick up" list. Shown at a greeting, a return, a break's end and a finished goal, as a deterministic line; no new trigger. Settings list open tasks with Done, for old undated ones that are never raised.
 - **`other_commitment`:** fourth label in `src/agent/relevance.js`, with a short list from `taskQueue()`.
 
 Flagged concerns:
@@ -68,9 +68,9 @@ Each step is its own commit and leaves `npm test` green.
 | 1 | `pageRegion`, `context.surface` | The event log shows `conversation` and the name | done |
 | 2 | Surface in keys, labels, evidence | An answer in a chat does not excuse the feed | done |
 | 3 | Notes in the prompt, per-person keys, judging again on import | Same chat, two memories, two responses | done |
-| 4 | Two-way labels | "Take me back" teaches | next |
-| 5 | `pickReminder`, answers, greeting | "Closes on 2026-11-04, did it go in?" | |
-| 6 | `other_commitment` | A page for another commitment gets no nudge | |
+| 4 | Remembered no, forgetting labels in settings | Tuck stops asking; a wrong label can go | done |
+| 5 | `pickReminder`, answers | "Due today. Still on your list?" | done |
+| 6 | `other_commitment` | A page for another commitment gets no nudge | next |
 | 7 | Recorded session, full evals | Both error rates reported | |
 
 ## Test plan
@@ -79,7 +79,7 @@ Tier: unit, replay and integration (e2e against the fake model). Eval for the pr
 
 New cases:
 - e2e: touching a chat in an open shadow root gives `conversation`; scrolling the feed returns to `page`, with focus still in the box; a feed comment box stays `page`; a messaging URL's `main` counts; a chat's answer does not excuse the feed; the same chat is a drift with nothing known and work once the notes name the person, and the feed under it still drifts.
-- Unit: per-person keys; a page's key unchanged; two-way labels (3 days, not 3 times in one day); `pickReminder` (moments only, once a day, done stays done); notes in the prompt; no notes means the prompt is unchanged; the notes changing means asking again.
+- Unit: per-person keys; a page's key unchanged; a remembered no; `pickReminder` (moments only, once a day, done stays done); notes in the prompt; no notes means the prompt is unchanged; the notes changing means asking again.
 - Eval: `notes-*` cases in `evals/relevance/cases.jsonl` (teammate, another Ali, generic dialog, a feed named in a note, Turkish), and `other_commitment` cases. `evals/baseline.json` does not exist yet, so the check is against the `docs/INTENT.md` thresholds.
 - Manual on real LinkedIn with the extension loaded, after step 3.
 

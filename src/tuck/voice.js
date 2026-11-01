@@ -63,6 +63,11 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
   }
 }
 
+// A deadline said aloud at a natural moment. when: "today", "tomorrow", "3 days ago".
+export function reminderLine(when) {
+  return /ago|yesterday/.test(when) ? `That was due ${when}. Still on your list?` : `Due ${when}. Still on your list?`;
+}
+
 const EMOJI = /\p{Extended_Pictographic}/u;
 const SECONDS = /\b\d+\s*(s|sec|secs|seconds?)\b/i;
 export const MAX_WORDS = 12;

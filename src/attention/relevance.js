@@ -59,8 +59,14 @@ export function labelKeys(topic, url, title, surface) {
 // conversation label says "this visit is work", not "this is always work": it lasts
 // cfg.labelMin minutes, and for good only once given on cfg.labelDays different days.
 // day: the local day of ts (intents.js dayKey). surface: "conversation", or nothing.
-export function nextLabel(prev, { key, topic, host, title, ts, day, surface }, cfg) {
-  const days = [...new Set([...(prev?.days ?? []), day])];
+//
+// "No, take me back" on a page Tuck was unsure about: label "unrelated". It lasts at once,
+// so the question is not asked again. Being wrong costs little: the nudge that follows
+// offers "This is for my task", which replaces it, and settings can forget it.
+export function nextLabel(prev, { key, topic, host, title, ts, day, surface, label = "related" }, cfg) {
+  if (label === "unrelated")
+    return { key, label, topic, host, title, ts, days: [day], until: null, ...(surface && { surface }) };
+  const days = [...new Set([...(prev?.label === "unrelated" ? [] : (prev?.days ?? [])), day])];
   const titled = TITLE_SENSITIVE.includes(host) && surface !== "conversation";
   const lasting = titled || days.length >= cfg.labelDays;
   return {
