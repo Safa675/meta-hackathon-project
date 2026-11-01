@@ -122,7 +122,7 @@ test("page text never goes to Meta's Contributor tier", () => {
     apiKey: "k",
     model: undefined,
   });
-  assert.equal(privateSettings({ apiKey: "k" }).provider, "meta", "Contributor is the default provider");
+  assert.equal(privateSettings({ apiKey: "k" }).provider, "meta", "an unset provider is plain Meta, never Contributor");
   assert.equal(privateSettings({ provider: "meta-contributor", model: "muse-spark-1.3-contributor" }).model, undefined);
   assert.equal(privateSettings({ provider: "meta-contributor", model: "muse-spark-2" }).model, "muse-spark-2");
   // Review: Contributor typed as the model on plain Meta.

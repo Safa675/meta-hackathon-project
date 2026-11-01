@@ -1,11 +1,14 @@
 // Model client for OpenAI-compatible chat completions.
-// "meta-contributor" (the default) and "meta" are Meta's Model API: same model;
+// "meta" (the default) and "meta-contributor" are Meta's Model API: same model;
 // Contributor costs far less, Meta may train on its inputs and outputs, and it is
-// only offered in some countries. Muse Spark Open and Muse Glimmer are not
+// only offered in some countries. Tuck sends people's notes to the model, so
+// Contributor is not offered in settings: it stays resolvable only so settings
+// saved earlier still load, and privateSettings() swaps it out of every call.
+// Muse Spark Open and Muse Glimmer are not
 // served on the Model API: the Spark Open entries are the hosts Meta's deploy
 // docs list; Glimmer is on OpenRouter or runs locally through Ollama.
 
-export const DEFAULT_PROVIDER = "meta-contributor";
+export const DEFAULT_PROVIDER = "meta";
 
 export const PROVIDERS = {
   "meta-contributor": { baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3-contributor" },

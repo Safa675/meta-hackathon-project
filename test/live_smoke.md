@@ -7,7 +7,7 @@ Not part of the automated suite. Run it before recording the demo video.
 
 - The extension loaded unpacked (the `src/` folder) in the user's real Chrome from the branch under test.
 - A Meta Model API key pasted in the options page; the provider set to
-  `meta-contributor` (or `meta` if Contributor is not available).
+  `meta`.
 - The demo brain (`demo/brain/`) connected from the options page.
 - `npm test` and `npm run test:e2e` green on the same commit.
 
