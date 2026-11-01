@@ -1,6 +1,7 @@
 import { Memory } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
+import { privateSettings } from "../agent/relevance.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
 
@@ -118,7 +119,7 @@ async function readProfile() {
   try {
     const settings = await loadModelSettings();
     if (!settings) return "Set up a model above, then press Re-read my memory.";
-    const r = await buildProfile(modelClient(settings), await memory.profileSample());
+    const r = await buildProfile(modelClient(privateSettings(settings)), await memory.profileSample());
     if (r.source === "empty") return "No memory imported yet.";
     if (!r.profile) return `Could not read your memory: ${r.error}`;
     await memory.setProfile(r.profile);
