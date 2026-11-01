@@ -59,6 +59,8 @@ export async function openStore(name = "attention") {
     },
     getCached: (key) => get("relevanceCache", key),
     putCached: (entry) => put("relevanceCache", entry),
+    // What was judged before the person's notes changed may no longer hold.
+    clearCached: () => tx(db, "relevanceCache", "readwrite", (s) => s.clear()),
     putIntent: (intent) => put("intents", intent),
     async activeIntent() {
       const all = await tx(db, "intents", "readonly", (s) => s.getAll());

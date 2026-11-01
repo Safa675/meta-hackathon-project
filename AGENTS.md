@@ -6,8 +6,9 @@ A Chromium MV3 extension: a focus companion for people with ADHD and anyone whos
 drifts easily. It knows what you meant to do today, notices when you drift away from it in the
 browser, and talks you back through a small avatar — a buddy, not a blocker — learning which
 detours are fine for you. It does not monitor outside the browser, block or lock pages, or give
-medical advice. It judges pages by URL and title; only right before a drift nudge does it check
-whether you are typing and read a short, redacted excerpt of the page (settings; never kept).
+medical advice. It judges pages by URL and title, and notes which conversation you are working in
+by its heading; only right before a drift nudge does it check whether you are typing and read a
+short, redacted excerpt of the page (settings; never kept).
 
 **Stack:** JavaScript (plain ES modules, no build step), Chrome MV3, IndexedDB + `chrome.storage`, Meta Model API (OpenAI-compatible); Node 24 + npm for tests
 **Layout:** `src/` is the extension (Load unpacked → `src/`): `background/` service worker ·

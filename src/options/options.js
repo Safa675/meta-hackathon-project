@@ -84,6 +84,7 @@ $("connect").onclick = async () => {
     const dir = await showDirectoryPicker({ mode: "readwrite" });
     $("brain-status").textContent = "Reading…";
     const r = await memory.connectBrain(dir);
+    await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
     $("profile-status").textContent = "Reading…";
     await showProfile(await readProfile());
@@ -96,6 +97,7 @@ $("sync").onclick = async () => {
   $("brain-status").textContent = "Syncing…";
   try {
     const r = await memory.syncBrain({ prompt: true });
+    if (r.connected && !r.needsPermission) await chrome.runtime.sendMessage({ type: "memory-changed" });
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");

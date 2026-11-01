@@ -11,6 +11,7 @@ import {
   cacheUsable,
   nextLabel,
   labelHolds,
+  notesAbout,
 } from "../../../src/attention/relevance.js";
 
 test("normalizeTitle drops notification counters, extra spaces and case", () => {
@@ -126,4 +127,117 @@ test("labels saved before they expired: a site label no longer holds, a title la
   assert.ok(!labelHolds(old, at));
   assert.ok(labelHolds({ ...old, key: "pitch|youtube.com|x", host: "youtube.com" }, at));
   assert.ok(!labelHolds(undefined, at));
+});
+
+// One URL and title can hold a chat and a feed (issue #9): their judgments stay apart.
+const CHAT = { kind: "conversation", labels: ["Ali"] };
+const PLAIN = { kind: "page", labels: [] };
+
+test("a conversation has its own relevance key per person; a page keeps the key it always had", () => {
+  const url = "https://www.linkedin.com/feed/";
+  const base = "i1|linkedin.com|feed | linkedin";
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn"), base);
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", PLAIN), base);
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", CHAT), `${base}|conversation|ali`);
+  assert.equal(
+    relevanceKey("i1", url, "Feed | LinkedIn", { kind: "conversation", labels: [] }),
+    `${base}|conversation`,
+  );
+});
+
+test("what is known of one person says nothing of another", () => {
+  const url = "https://www.linkedin.com/feed/";
+  const other = { kind: "conversation", labels: ["Deniz"] };
+  assert.notEqual(relevanceKey("i1", url, "x", CHAT), relevanceKey("i1", url, "x", other));
+  assert.notEqual(labelKeys("shop", url, "x", CHAT)[0], labelKeys("shop", url, "x", other)[0]);
+});
+
+test("a conversation looks at its own label first, then the page's; a page never at the conversation's", () => {
+  const url = "https://www.linkedin.com/feed/";
+  assert.deepEqual(labelKeys("shop", url, "x", CHAT), ["shop|linkedin.com|conversation|ali", "shop|linkedin.com"]);
+  assert.deepEqual(labelKeys("shop", url, "x", PLAIN), ["shop|linkedin.com"]);
+  assert.deepEqual(labelKeys("shop", "https://x.com/home", "Home", CHAT), [
+    "shop|x.com|conversation|ali",
+    "shop|x.com|home",
+    "shop|x.com",
+  ]);
+});
+
+test("a conversation label on a title-sensitive host expires like a site label", () => {
+  const cfg = withOverrides({ labelMin: 30, labelDays: 3 });
+  const page = { key: "shop|x.com|conversation", topic: "shop", host: "x.com", title: "Home", ts: 0, day: "d1" };
+  const label = nextLabel(null, { ...page, surface: "conversation" }, cfg);
+  assert.equal(label.surface, "conversation");
+  assert.equal(label.until, 30 * 60 * 1000);
+  assert.equal(labelHolds(label, 29 * 60 * 1000), true);
+  assert.equal(labelHolds(label, 31 * 60 * 1000), false, "x.com's title rule is about pages");
+  const titleLabel = nextLabel(null, { ...page, key: "shop|x.com|home" }, cfg);
+  assert.equal(titleLabel.until, null, "a title label on the same host still lasts");
+});
+
+// Memory's search matches on any one word (issue #8).
+const entry = (title, context, topic = "shop") => ({
+  title,
+  item: { topic, context, result: "Done.", next: "none" },
+});
+
+test("a word in common with a note is not enough", () => {
+  const hits = [
+    entry("Grocery plan of the week", "Buy the rice."),
+    entry("Tax", "File the form by the end of the year."),
+  ];
+  const page = { title: "Top 10 F1 crashes of the year", host: "youtube.com" };
+  assert.deepEqual(notesAbout(hits, page), []);
+});
+
+test("on a page, a note names the site or shares two words with the title", () => {
+  const site = entry("LinkedIn nudge", "Tuck spoke during a chat.");
+  const titled = entry("Acme Cart review", "Compare their checkout flow.");
+  const one = entry("Cart cleanup", "Remove old items.");
+  const found = notesAbout([site, titled, one], { title: "Acme Cart: a shop tool", host: "linkedin.com" });
+  assert.deepEqual(
+    found.map((n) => n.title),
+    ["LinkedIn nudge", "Acme Cart review"],
+  );
+});
+
+test("in a conversation, a note must name the person, across spellings", () => {
+  const known = entry("Demo plan", "Working with İrem on the hackathon.");
+  const site = entry("LinkedIn nudge", "Tuck spoke during a chat.");
+  const found = notesAbout([site, known], { title: "Feed", host: "linkedin.com", name: "IREM OZTIMUR" });
+  assert.deepEqual(
+    found.map((n) => n.title),
+    ["Demo plan"],
+  );
+  assert.deepEqual(notesAbout([site], { title: "Feed", host: "linkedin.com", name: "Create post" }), []);
+});
+
+test("entries go whole; a long plain note is cut around the word that matched", () => {
+  const long = "x ".repeat(4000) + "Working with Deniz Kaya here. " + "y ".repeat(4000);
+  const plain = { title: "Project log", item: { text: long } };
+  const [note, ent] = notesAbout([plain, entry("Kaya entry", `Deniz ${"c".repeat(1800)}`)], {
+    title: "x",
+    host: "a.com",
+    name: "Deniz Kaya",
+  });
+  assert.match(note.text, /Working with Deniz Kaya/);
+  assert.ok(note.text.length <= 1500);
+  assert.ok(ent.text.length > 1800);
+});
+
+test("at most five notes", () => {
+  const hits = Array.from({ length: 8 }, (_, i) => entry(`Note ${i}`, "About Deniz."));
+  assert.equal(notesAbout(hits, { title: "x", host: "a.com", name: "Deniz" }).length, 5);
+});
+
+test("the cut still holds the match when folding shifts a Turkish note's positions", () => {
+  const before = "İİı şğüöç ".repeat(5000);
+  const text = `${before}Deniz Kaya ile çalışıyoruz. ${"son ".repeat(5000)}`;
+  const [note] = notesAbout([{ title: "Proje günlüğü", item: { text } }], {
+    title: "x",
+    host: "a.com",
+    name: "Deniz Kaya",
+  });
+  assert.match(note.text, /Deniz Kaya ile çalışıyoruz/);
+  assert.ok(note.text.length <= 1500);
 });

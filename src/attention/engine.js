@@ -88,6 +88,8 @@ function evidence(s, ts, cfg) {
     url: s.current?.url ?? "",
     host: s.current?.host ?? "",
     title: s.current?.title ?? "",
+    surface: s.current?.surface ?? null,
+    key: s.current?.key ?? null,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -99,8 +101,10 @@ function evidence(s, ts, cfg) {
 
 function rememberRelated(s, ts) {
   // A page with no URL (this extension's own pages) is never a place to go back to, nor
-  // one that is work only by what its excerpt said (a chat on a feed page).
-  if (s.current?.label === "related" && !s.current.pending && s.current.url && s.current.source !== "look") {
+  // one that is work only by what its excerpt said (a chat on a feed page), nor a
+  // conversation: its URL opens the page around it, not the chat.
+  const chat = s.current?.surface?.kind === "conversation";
+  if (s.current?.label === "related" && !s.current.pending && s.current.url && s.current.source !== "look" && !chat) {
     const { tabId, url, title } = s.current;
     s.lastRelevant = { tabId, url, title, ts };
   }
@@ -148,6 +152,7 @@ function applyContext(s, input, candidates, cfg) {
     confidence: pending ? (same?.confidence ?? 0) : (input.confidence ?? 1),
     pending: pending ? (same ? same.pending : true) : false,
     source: pending ? (same?.source ?? null) : (input.source ?? null),
+    surface: input.surface ?? null,
   };
   const askedAt = s.asked[input.key];
   if (s.intent && s.current.pending && (askedAt == null || input.ts - askedAt >= cfg.relevanceRetrySec * S)) {
@@ -159,6 +164,7 @@ function applyContext(s, input, candidates, cfg) {
       url: input.url,
       host: input.host,
       title: input.title,
+      surface: s.current.surface,
     });
   }
   rememberRelated(s, input.ts);
@@ -190,6 +196,10 @@ function applySession(s, input) {
     s.policy.episode = null;
   } else if (input.kind === "mode") {
     s.mode = input.payload.mode;
+  } else if (input.kind === "memory") {
+    // The person's notes changed: what the page in front means is an open question again.
+    s.asked = {};
+    if (s.current) Object.assign(s.current, { label: "neutral", confidence: 0, pending: true, source: null });
   }
 }
 
@@ -200,7 +210,10 @@ function applyResponse(s, input, cfg) {
     s.lastDriftTs = null;
   }
   // The nudged page; the person may have moved on since (pageUrl absent: the page in front).
-  const nudgedIsCurrent = !input.pageUrl || input.pageUrl === s.current?.url;
+  // On one URL a chat, another chat and a feed are different pages (pageKey absent: an older log).
+  const nudgedIsCurrent = input.pageKey
+    ? input.pageKey === s.current?.key
+    : !input.pageUrl || input.pageUrl === s.current?.url;
   if (input.choice === "related" && s.current && nudgedIsCurrent) {
     Object.assign(s.current, { label: "related", confidence: 1, pending: false, source: "label" });
     const last = s.timeline.at(-1);
@@ -226,7 +239,16 @@ const looking = (s, cfg) => cfg.secondLook && !["dnd", "off"].includes(s.mode);
 function requestLook(s, ts, out) {
   const c = s.current;
   s.look = { key: c.key, askedTs: ts, answer: null };
-  out.push({ type: "need_second_look", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+  out.push({
+    type: "need_second_look",
+    ts,
+    key: c.key,
+    tabId: c.tabId,
+    url: c.url,
+    host: c.host,
+    title: c.title,
+    surface: c.surface,
+  });
 }
 
 function applySecondLook(s, input, cfg) {
@@ -346,7 +368,16 @@ export function step(prev, input, cfg = DEFAULTS) {
   ) {
     const c = s.current;
     s.readAheadKey = c.key;
-    out.push({ type: "read_ahead", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+    out.push({
+      type: "read_ahead",
+      ts,
+      key: c.key,
+      tabId: c.tabId,
+      url: c.url,
+      host: c.host,
+      title: c.title,
+      surface: c.surface,
+    });
   }
   if (core === "drifting") {
     // Every drift word is looked at first, when it is due: typing then is what counts.

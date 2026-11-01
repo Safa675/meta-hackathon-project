@@ -58,8 +58,11 @@ medical or therapeutic help.
   Contributor is sent, and Tuck sends people's notes.
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
 - **Constraint:** everything in English; the companion answers in the user's language.
-- **Constraint:** relevance is judged from URL and title; before a drift word about a page,
-  a second look checks whether the person is typing there and reads a short excerpt near
+- **Constraint:** relevance is judged from URL and title, plus where the person is working
+  on the page: the conversation they last touched, by its heading only (not on never-read
+  sites; can be turned off), and up to 5 of their own notes about that page or person, sent
+  redacted to a model that does not train on them; before a drift word about a page, a second
+  look checks whether the person is typing there and reads a short excerpt near
   where they work (redacted, sent to a model that does not train on it, never kept; never
   on pages with a password field or on the never-read sites; can be turned off). No
   screenshots. URL and title alone could not tell a work chat from a feed on one site

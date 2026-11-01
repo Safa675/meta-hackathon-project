@@ -67,6 +67,50 @@ const server = http.createServer((req, res) => {
           `<p>Me: will do, then the demo of the checkout flow.</p>` +
           `<p>Ali: perfect, and add a note on the zero quantity edge case in the description.</p>${reply}</aside>`,
       );
+  // A chat in an open shadow root, docked over a page with a comment box (LinkedIn's layout).
+  if (req.url === "/docked")
+    return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+      `<title>Workspace</title><main style="height:3000px"><h1>Feed</h1><p id="post">A post.</p>` +
+        `<textarea id="comment"></textarea></main><div id="outlet" style="position:fixed;bottom:0;right:0"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div id="docked-chat" role="dialog" aria-label="Messaging"><h2>Ali Demir</h2>' +
+            '<p aria-label="Options for the message from Ali: secret plan">secret plan</p>' +
+            '<div id="docked-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
+        </script>`,
+    );
+  // The same layout on a social site, which the fake model calls unrelated.
+  if (req.url === "/docked-social")
+    return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+      `<title>Cats | Social</title><main style="height:3000px"><p>A post about cats.</p></main>` +
+        `<div id="outlet" style="position:fixed;bottom:0;right:0"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div role="dialog" aria-label="Messaging"><h2>Ali Demir</h2>' +
+            '<div id="social-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
+        </script>`,
+    );
+  // A chat with someone only the notes know about.
+  if (req.url === "/known-chat")
+    return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+      `<title>Dogs | Social</title><main style="height:3000px"><p>A post about dogs.</p></main>` +
+        `<div id="outlet" style="position:fixed;bottom:0;right:0"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div role="dialog" aria-label="Messaging"><h2>Deniz Kaya</h2>' +
+            '<div id="known-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
+        </script>`,
+    );
+  // An article about chat with a feedback box: not a conversation.
+  if (req.url === "/docs/chat-api")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(`<title>Chat API docs</title><main><h2>Was this helpful?</h2><textarea id="feedback"></textarea></main>`);
+  // The full messaging page: no dialog, the box is in the main area.
+  if (req.url === "/messaging/thread/1")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Messaging</title><main><section><h2>Ali Demir</h2>` +
+          `<div id="thread-box" role="textbox" contenteditable="true" style="height:40px"></div></section></main>`,
+      );
   if (req.url === "/login")
     return res
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
@@ -87,6 +131,20 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
     }
     calls.push(messages);
+    // Notes that name the person spoken to: that conversation is work.
+    const prompt = messages.at(-1).content;
+    if (/From their own notes:[\s\S]*Deniz Kaya[\s\S]*In a conversation with: Deniz Kaya/.test(prompt))
+      return res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({ label: "related", confidence: 0.9, reason: "A teammate from their notes." }),
+              },
+            },
+          ],
+        }),
+      );
     // The second look: judge the excerpt alone (the goal itself says "checkout").
     const excerpt = messages.at(-1).content.match(/^Page excerpt: (.*)$/m)?.[1];
     const reply =
@@ -108,6 +166,10 @@ const chat = `http://localhost:${port}/chat`;
 const compose = `http://localhost:${port}/compose`;
 const side = `http://localhost:${port}/side`;
 const login = `http://localhost:${port}/login`;
+const docked = `http://localhost:${port}/docked`;
+const thread = `http://localhost:${port}/messaging/thread/1`;
+const dockedSocial = `http://localhost:${port}/docked-social`;
+const knownChat = `http://localhost:${port}/known-chat`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -313,12 +375,143 @@ await loginTab.goto(login);
 await loginTab.bringToFront();
 const drift8 = await waitForNewDrift(driftSide.id);
 
+// Where the person works on the page (issue #9): the conversation last touched, by its
+// heading. Each answer is read from the exported log, the input a replay sees.
+const surfaceAt = async (url, wanted) => {
+  for (let i = 0; i < 40; i++) {
+    await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+    const { events } = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
+    const surface = events.filter((e) => e.type === "context" && e.url === url).at(-1)?.surface;
+    if (surface?.kind === wanted) return surface;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no ${wanted} surface on ${url}`);
+};
+const dockedTab = await ctx.newPage();
+await dockedTab.goto(docked);
+await dockedTab.bringToFront();
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+const dockedStart = await surfaceAt(docked, "page");
+await dockedTab.click("#docked-box");
+const dockedChat = await surfaceAt(docked, "conversation");
+// The feed scrolls under the chat: the focus stays in the box, the person does not.
+await dockedTab.mouse.move(40, 200);
+await dockedTab.mouse.wheel(0, 200);
+const dockedFeed = await surfaceAt(docked, "page");
+const focusStayed = await dockedTab.evaluate(
+  () => document.getElementById("outlet").shadowRoot.activeElement?.id === "docked-box",
+);
+await dockedTab.click("#docked-box");
+await surfaceAt(docked, "conversation");
+await dockedTab.click("#comment");
+const dockedComment = await surfaceAt(docked, "page");
+// A chat touched and then closed is a page again.
+await dockedTab.click("#docked-box");
+await surfaceAt(docked, "conversation");
+await dockedTab.evaluate(() => document.getElementById("outlet").shadowRoot.getElementById("docked-chat").remove());
+const dockedClosed = await surfaceAt(docked, "page");
+await dockedTab.goto(thread);
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await dockedTab.click("#thread-box");
+const threadChat = await surfaceAt(thread, "conversation");
+// A reload wipes what the page noted: it is watched again, with the tab and URL unchanged.
+await dockedTab.reload();
+await surfaceAt(thread, "page");
+await dockedTab.click("#thread-box");
+const threadAfterReload = await surfaceAt(thread, "conversation");
+await dockedTab.goto(`http://localhost:${port}/docs/chat-api`);
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await dockedTab.click("#feedback");
+await popup.waitForTimeout(500);
+const articleSurface = await surfaceAt(`http://localhost:${port}/docs/chat-api`, "page");
+await dockedTab.close();
+
+// A chat's answer stays with the chat (issue #9): "This is for my task" in the conversation
+// silences it, and the feed on the same URL still drifts.
+const socialTab = await ctx.newPage();
+await socialTab.goto(dockedSocial);
+await socialTab.bringToFront();
+await socialTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await socialTab.click("#social-box");
+await surfaceAt(dockedSocial, "conversation");
+// The budget carries over from the last page, so a first word can come before the chat is
+// touched. It is about the page; the answer below has to be about the chat.
+let driftInChat = await waitForNewDrift(drift8.id);
+while (driftInChat.evidence.surface?.kind !== "conversation") driftInChat = await waitForNewDrift(driftInChat.id);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "related" }));
+const chatAfterAnswer = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
+// Away from Tuck, top left here: touching Tuck says nothing about where the person works.
+await socialTab.mouse.move(40, 400);
+await socialTab.mouse.wheel(0, 200);
+await surfaceAt(dockedSocial, "page");
+const driftOnFeed = await waitForNewDrift(driftInChat.id);
+await socialTab.click("#social-box");
+await surfaceAt(dockedSocial, "conversation");
+await popup.waitForTimeout(500);
+const backInChat = await popup.evaluate(async () => {
+  const { events } = await chrome.runtime.sendMessage({ type: "export-log" });
+  return events.filter((e) => e.type === "context").at(-1);
+});
+await socialTab.close();
+
+// Notes decide what a page means (issue #8). The same chat, the same minute: with nothing
+// known it is a drift; once the notes name the person it is work, with no nudge; and the
+// feed under it still drifts.
+const knownTab = await ctx.newPage();
+await knownTab.goto(knownChat);
+await knownTab.bringToFront();
+await knownTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await knownTab.click("#known-box");
+await surfaceAt(knownChat, "conversation");
+let driftUnknown = await waitForNewDrift(driftOnFeed.id);
+while (driftUnknown.evidence.surface?.kind !== "conversation") driftUnknown = await waitForNewDrift(driftUnknown.id);
+const askedBefore = calls.length;
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const memory = await Memory.open();
+  await memory.importFiles([
+    {
+      path: "notes/log/2026/note.md",
+      text: [
+        "---",
+        'title: "Deniz Kaya joins the shop work"',
+        "kind: fact",
+        "topic: shop",
+        "date: 2026-10-30",
+        "source: test",
+        "id: abc123",
+        "---",
+        "",
+        "- **Context:** Working with Deniz Kaya on the shop bug.",
+        "- **Decision/Result:** We pair every day.",
+        "- **Evidence:** none",
+        "- **Next action:** none",
+      ].join("\n"),
+    },
+  ]);
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+});
+await knownTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await popup.waitForTimeout(6000);
+const knownEvents = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }))).events;
+const knownVerdict = knownEvents
+  .filter((e) => e.type === "relevance" && /\|conversation\|deniz kaya$/.test(e.key))
+  .at(-1);
+const afterKnown = await lastTrigger();
+const notesPrompt = calls.slice(askedBefore).find((m) => /From their own notes:/.test(m.at(-1).content));
+await knownTab.mouse.move(40, 400);
+await knownTab.mouse.wheel(0, 200);
+await surfaceAt(knownChat, "page");
+const driftKnownFeed = await waitForNewDrift(afterKnown.id);
+await knownTab.close();
+
 // Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
 // nothing is read: the chat page is a drift again.
 await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const driftOff = await waitForNewDrift(drift8.id);
+const driftOff = await waitForNewDrift(driftKnownFeed.id);
 
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
@@ -402,6 +595,34 @@ assert.ok(typedLook, "with typing, the chat around the box was read");
 assert.doesNotMatch(typedLook.at(-1).content, /Five lessons/, "the chat, not the whole page");
 assert.ok(!sideLooks.some((m) => /on it/.test(m.at(-1).content.split("Page excerpt:")[1] ?? "")), "not the draft");
 assert.equal(drift8.evidence.url, login);
+assert.deepEqual(dockedStart, { kind: "page", labels: [] }, "a chat merely open is not where the person works");
+assert.deepEqual(
+  dockedChat,
+  { kind: "conversation", labels: ["Ali Demir"] },
+  "the chat in a shadow root, by its heading",
+);
+assert.deepEqual(dockedFeed, { kind: "page", labels: [] }, "scrolling the feed ends the conversation");
+assert.equal(focusStayed, true, "with the focus still in the chat's box");
+assert.deepEqual(dockedComment, { kind: "page", labels: [] }, "a comment box on a feed is not a conversation");
+assert.deepEqual(dockedClosed, { kind: "page", labels: [] }, "a closed chat is a page");
+assert.deepEqual(threadChat, { kind: "conversation", labels: ["Ali Demir"] }, "the full messaging page");
+assert.equal(threadAfterReload.kind, "conversation", "still watched after a reload");
+assert.equal(articleSurface.kind, "page", "an article about chat is not a conversation");
+assert.ok(
+  !log.events.some((e) => JSON.stringify(e.surface ?? "").includes("secret plan")),
+  "only the heading is read, not message text in labels",
+);
+assert.equal(driftInChat.evidence.surface.kind, "conversation", "the nudge says it was about the chat");
+const chatLabel = chatAfterAnswer.events.filter((e) => e.type === "feedback" && e.kind === "label").at(-1).payload;
+assert.match(chatLabel.key, /\|conversation\|ali demir$/, "the answer labels the conversation, not the site");
+assert.equal(driftOnFeed.evidence.url, dockedSocial, "the feed on the same URL still drifts");
+assert.equal(driftOnFeed.evidence.surface.kind, "page");
+assert.equal(backInChat.source, "label", "back in the chat, its label still holds");
+assert.equal(driftUnknown.evidence.url, knownChat, "with nothing known, the chat is a drift");
+assert.equal(knownVerdict?.label, "related", "once the notes name the person, the same chat is work");
+assert.equal(afterKnown.id, driftUnknown.id, "and Tuck says nothing more about it");
+assert.match(notesPrompt.at(-1).content, /Working with Deniz Kaya/, "the note itself reached the model");
+assert.equal(driftKnownFeed.evidence.surface.kind, "page", "the feed under the chat still drifts");
 assert.equal(driftOff.evidence.url, chat, "with reading off, a cached verdict does not count");
 assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "settings"),
