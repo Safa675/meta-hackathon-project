@@ -1,3 +1,4 @@
+import { stillOpen } from "../attention/reminders.js";
 import { Memory } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
@@ -133,15 +134,65 @@ async function readProfile() {
 
 async function showProfile(note) {
   const profile = await memory.profile();
-  const queue = await memory.taskQueue({ today: localDate(), limit: 5 });
+  const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
     note,
     profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",
     profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
-    queue.length ? "\nWhat is running out:" : null,
-    ...queue.map((e) => `- ${e.title}${e.due ? ` — due ${e.due} (${dueLabel(e.daysLeft)})` : " — no date"}`),
   ].filter(Boolean);
   $("profile-status").textContent = lines.join("\n");
+  await showTasks(queue);
+  await showLabels();
+}
+
+// One line and one button: the tasks left, and what Tuck learned.
+function listRow(text, label, onclick) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const line = document.createElement("span");
+  line.className = "small";
+  line.textContent = text;
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.onclick = onclick;
+  row.append(line, button);
+  return row;
+}
+
+// Nothing in the notes marks a task done, so an old "next action" stays until it is
+// marked here or answered in Tuck's bubble.
+async function showTasks(queue) {
+  const { loops = {} } = await chrome.storage.local.get("loops");
+  // Goals set here are not tasks from the notes: they end with Done on the goal itself.
+  const open = stillOpen(queue, loops).filter((e) => e.source !== "extension");
+  $("task-list").replaceChildren(
+    ...open.map((e) =>
+      listRow(`${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`, "Done", async () => {
+        await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice: "done" });
+        await showProfile();
+      }),
+    ),
+  );
+}
+
+function labelText({ label, host, title, surface, who }) {
+  const verdict = label === "unrelated" ? "not work" : "work";
+  if (surface === "conversation") return `Conversations with ${who ?? "this person"} on ${host}: ${verdict}`;
+  return `${host}${title ? ` ("${title}")` : ""}: ${verdict}`;
+}
+
+async function showLabels() {
+  const labels = await chrome.runtime.sendMessage({ type: "get-labels" });
+  $("label-list").replaceChildren(
+    ...(labels?.length
+      ? labels.map((l) =>
+          listRow(labelText(l), "Forget", async () => {
+            await chrome.runtime.sendMessage({ type: "delete-label", key: l.key });
+            await showLabels();
+          }),
+        )
+      : [Object.assign(document.createElement("p"), { className: "small muted", textContent: "Nothing yet." })]),
+  );
 }
 
 $("reread").onclick = async () => {

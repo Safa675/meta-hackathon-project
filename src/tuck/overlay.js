@@ -168,6 +168,34 @@
     if (!b) return (box.hidden = true);
     box.hidden = false;
     box.append(el("p", { className: "text", textContent: b.text }));
+    if (b.reminder) {
+      const { id, title, line } = b.reminder;
+      const part = el("div", { className: "reminder" });
+      const answer = (choice, label) => {
+        const button = el("button", {
+          className: "b",
+          textContent: label,
+          onclick: () => {
+            part.remove();
+            send({ type: "reminder-answer", id, title, choice });
+          },
+        });
+        button.dataset.reminder = choice;
+        return button;
+      };
+      part.append(
+        el("p", { className: "text", textContent: line }),
+        el("p", { className: "next", textContent: title }),
+        el(
+          "div",
+          { className: "row" },
+          answer("on_it", "On it"),
+          answer("switch", "Switch to this"),
+          answer("done", "Done"),
+        ),
+      );
+      box.append(part);
+    }
     if (b.kind === "nudge") {
       const row = el("div", { className: "row" });
       for (const btn of b.buttons) {

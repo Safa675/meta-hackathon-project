@@ -55,12 +55,27 @@ export function labelKeys(topic, url, title, surface) {
   return inConversation(surface) ? [`${topic}|${host}|${conversationPart(surface)}`, ...page] : page;
 }
 
+// Where a no is kept: that page by its title, or that conversation. A no says "not this",
+// never "nothing on this site": a repo or a document on the same host can be the work.
+export function notWorkKey(topic, url, title, surface) {
+  const host = hostOf(url);
+  return inConversation(surface)
+    ? `${topic}|${host}|${conversationPart(surface)}`
+    : `${topic}|${host}|${normalizeTitle(title)}`;
+}
+
 // "This is for my task". A title label (TITLE_SENSITIVE hosts) lasts. A whole-site or
 // conversation label says "this visit is work", not "this is always work": it lasts
 // cfg.labelMin minutes, and for good only once given on cfg.labelDays different days.
 // day: the local day of ts (intents.js dayKey). surface: "conversation", or nothing.
-export function nextLabel(prev, { key, topic, host, title, ts, day, surface }, cfg) {
-  const days = [...new Set([...(prev?.days ?? []), day])];
+//
+// "No, take me back" on a page Tuck was unsure about: label "unrelated", under notWorkKey.
+// It lasts at once, so the question is not asked again. Being wrong costs little: the nudge that follows
+// offers "This is for my task", which replaces it, and settings can forget it.
+export function nextLabel(prev, { key, topic, host, title, ts, day, surface, label = "related" }, cfg) {
+  if (label === "unrelated")
+    return { key, label, topic, host, title, ts, days: [day], until: null, ...(surface && { surface }) };
+  const days = [...new Set([...(prev?.label === "unrelated" ? [] : (prev?.days ?? [])), day])];
   const titled = TITLE_SENSITIVE.includes(host) && surface !== "conversation";
   const lasting = titled || days.length >= cfg.labelDays;
   return {

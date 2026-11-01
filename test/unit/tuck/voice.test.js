@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { siteName, taskPhrase, templateNudge, followsVoice } from "../../../src/tuck/voice.js";
+import { siteName, taskPhrase, templateNudge, followsVoice, reminderLine } from "../../../src/tuck/voice.js";
 
 test("sites go by their everyday names", () => {
   assert.equal(siteName("youtube.com"), "YouTube");
@@ -58,4 +58,11 @@ test("the voice rules: short, no emoji, no exclamation, no seconds", () => {
     followsVoice("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"),
     false,
   );
+});
+
+test("a reminder's line follows the voice", () => {
+  for (const when of ["today", "tomorrow", "yesterday", "3 days ago"])
+    assert.ok(followsVoice(reminderLine(when)), when);
+  assert.equal(reminderLine("tomorrow"), "Due tomorrow. Still on your list?");
+  assert.equal(reminderLine("yesterday"), "That was due yesterday. Still on your list?");
 });
