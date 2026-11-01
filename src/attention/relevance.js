@@ -84,6 +84,56 @@ export function labelHolds(label, now) {
   return label.until == null || now < label.until;
 }
 
+// ---- Notes about a page or a person ----------------------------------------
+// Memory's search matches on any one shared word, even "the". Sent as it is, nearly every
+// page would carry unrelated notes to the model. This keeps what is really about it.
+const COMMON = new Set(
+  (
+    "the and for with from this that you your are was were has have not but all can how what when why who " +
+    "new home page feed about into our out one two get bir ile için icin gibi daha çok cok ama veya"
+  ).split(" "),
+);
+const foldText = (s) => s.replace(/[İIı]/g, "i").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+const wordsOf = (s = "") =>
+  foldText(s)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 2 && !COMMON.has(w));
+
+// A plain note can run to hundreds of thousands of characters: the part around the word
+// that matched, so the model sees why it was found.
+function around(text, words, chars) {
+  if (text.length <= chars) return text;
+  const units = [...text];
+  const folded = units.map((c) => foldText(c)[0] ?? c).join("");
+  const at = Math.min(...words.map((w) => folded.indexOf(w)).filter((i) => i >= 0), Infinity);
+  const start = at === Infinity ? 0 : Math.max(0, at - Math.floor(chars / 2));
+  return units.slice(start, start + chars).join("");
+}
+
+// hits: memory.recall() results. In a conversation a note must name the person. On a page
+// it must name the site, or share two words with the title. Entries go whole, short by
+// nature; plain notes are cut to `chars`. Returns [{topic, title, text}], at most `max`.
+export function notesAbout(hits, { title, host, name }, { max = 5, chars = 1500 } = {}) {
+  const nameWords = wordsOf(name);
+  const siteWords = wordsOf((host ?? "").split(".").slice(0, -1).join(" "));
+  const titleWords = wordsOf(title);
+  const found = [];
+  for (const { title: noteTitle, item } of hits) {
+    const plain = typeof item.text === "string";
+    const body = plain
+      ? item.text
+      : [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ");
+    const words = new Set(wordsOf(`${noteTitle} ${body}`));
+    const has = (w) => words.has(w);
+    const about = nameWords.length ? nameWords.some(has) : siteWords.some(has) || titleWords.filter(has).length >= 2;
+    if (!about) continue;
+    const text = plain ? around(body, nameWords.length ? nameWords : [...siteWords, ...titleWords], chars) : body;
+    found.push({ topic: item.topic ?? "notes", title: noteTitle, text: text.replace(/\s+/g, " ") });
+    if (found.length === max) break;
+  }
+  return found;
+}
+
 const NEUTRAL_SCHEMES = ["about:", "chrome:", "edge:", "chrome-extension:"];
 const NEUTRAL_PAGES = [
   (u) => u.hostname === "www.google.com" && u.pathname === "/search",

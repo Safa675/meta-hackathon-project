@@ -34,7 +34,8 @@ export function isComposing(recentMs) {
 }
 
 // Notes the conversation the person last touched: a dialog holding a text box, or the
-// main area on a messaging URL (a comment box on a feed is not a conversation). Touching
+// main area of a messaging section, by the URL's first segment (a comment box on a feed
+// or an article about chat is not a conversation). Touching
 // anything else ends it, so a chat left open does not speak for the feed, and neither
 // does the focus, which stays in the chat's box while the feed scrolls. Keeps the element
 // only: no text is read here. composedPath and nodeType, because chats live in shadow
@@ -46,7 +47,7 @@ export function watchRegion() {
   const touched = (event) => {
     const path = event.composedPath().filter((n) => n.nodeType === 1);
     if (path.some((el) => el.id === "tuck-companion")) return; // Tuck's own bubble says nothing
-    const messaging = /messag|chat|inbox|thread/i.test(location.pathname);
+    const messaging = /^\/(messaging|messages?|chats?|inbox|direct|dm)(\/|$)/i.test(location.pathname);
     let found = null;
     for (const el of path) {
       if (el === document.body) break;

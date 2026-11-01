@@ -97,7 +97,7 @@ $("sync").onclick = async () => {
   $("brain-status").textContent = "Syncing…";
   try {
     const r = await memory.syncBrain({ prompt: true });
-    await chrome.runtime.sendMessage({ type: "memory-changed" });
+    if (r.connected && !r.needsPermission) await chrome.runtime.sendMessage({ type: "memory-changed" });
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");

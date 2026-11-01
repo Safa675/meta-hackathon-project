@@ -98,6 +98,11 @@ const server = http.createServer((req, res) => {
             '<div id="known-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
         </script>`,
     );
+  // An article about chat with a feedback box: not a conversation.
+  if (req.url === "/docs/chat-api")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(`<title>Chat API docs</title><main><h2>Was this helpful?</h2><textarea id="feedback"></textarea></main>`);
   // The full messaging page: no dialog, the box is in the main area.
   if (req.url === "/messaging/thread/1")
     return res
@@ -409,6 +414,16 @@ await dockedTab.goto(thread);
 await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
 await dockedTab.click("#thread-box");
 const threadChat = await surfaceAt(thread, "conversation");
+// A reload wipes what the page noted: it is watched again, with the tab and URL unchanged.
+await dockedTab.reload();
+await surfaceAt(thread, "page");
+await dockedTab.click("#thread-box");
+const threadAfterReload = await surfaceAt(thread, "conversation");
+await dockedTab.goto(`http://localhost:${port}/docs/chat-api`);
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await dockedTab.click("#feedback");
+await popup.waitForTimeout(500);
+const articleSurface = await surfaceAt(`http://localhost:${port}/docs/chat-api`, "page");
 await dockedTab.close();
 
 // A chat's answer stays with the chat (issue #9): "This is for my task" in the conversation
@@ -591,6 +606,8 @@ assert.equal(focusStayed, true, "with the focus still in the chat's box");
 assert.deepEqual(dockedComment, { kind: "page", labels: [] }, "a comment box on a feed is not a conversation");
 assert.deepEqual(dockedClosed, { kind: "page", labels: [] }, "a closed chat is a page");
 assert.deepEqual(threadChat, { kind: "conversation", labels: ["Ali Demir"] }, "the full messaging page");
+assert.equal(threadAfterReload.kind, "conversation", "still watched after a reload");
+assert.equal(articleSurface.kind, "page", "an article about chat is not a conversation");
 assert.ok(
   !log.events.some((e) => JSON.stringify(e.surface ?? "").includes("secret plan")),
   "only the heading is read, not message text in labels",

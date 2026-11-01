@@ -11,6 +11,7 @@ import {
   cacheUsable,
   nextLabel,
   labelHolds,
+  notesAbout,
 } from "../../../src/attention/relevance.js";
 
 test("normalizeTitle drops notification counters, extra spaces and case", () => {
@@ -172,4 +173,59 @@ test("a conversation label on a title-sensitive host expires like a site label",
   assert.equal(labelHolds(label, 31 * 60 * 1000), false, "x.com's title rule is about pages");
   const titleLabel = nextLabel(null, { ...page, key: "shop|x.com|home" }, cfg);
   assert.equal(titleLabel.until, null, "a title label on the same host still lasts");
+});
+
+// Memory's search matches on any one word (issue #8).
+const entry = (title, context, topic = "shop") => ({
+  title,
+  item: { topic, context, result: "Done.", next: "none" },
+});
+
+test("a word in common with a note is not enough", () => {
+  const hits = [
+    entry("Grocery plan of the week", "Buy the rice."),
+    entry("Tax", "File the form by the end of the year."),
+  ];
+  const page = { title: "Top 10 F1 crashes of the year", host: "youtube.com" };
+  assert.deepEqual(notesAbout(hits, page), []);
+});
+
+test("on a page, a note names the site or shares two words with the title", () => {
+  const site = entry("LinkedIn nudge", "Tuck spoke during a chat.");
+  const titled = entry("Acme Cart review", "Compare their checkout flow.");
+  const one = entry("Cart cleanup", "Remove old items.");
+  const found = notesAbout([site, titled, one], { title: "Acme Cart: a shop tool", host: "linkedin.com" });
+  assert.deepEqual(
+    found.map((n) => n.title),
+    ["LinkedIn nudge", "Acme Cart review"],
+  );
+});
+
+test("in a conversation, a note must name the person, across spellings", () => {
+  const known = entry("Demo plan", "Working with İrem on the hackathon.");
+  const site = entry("LinkedIn nudge", "Tuck spoke during a chat.");
+  const found = notesAbout([site, known], { title: "Feed", host: "linkedin.com", name: "IREM OZTIMUR" });
+  assert.deepEqual(
+    found.map((n) => n.title),
+    ["Demo plan"],
+  );
+  assert.deepEqual(notesAbout([site], { title: "Feed", host: "linkedin.com", name: "Create post" }), []);
+});
+
+test("entries go whole; a long plain note is cut around the word that matched", () => {
+  const long = "x ".repeat(4000) + "Working with Deniz Kaya here. " + "y ".repeat(4000);
+  const plain = { title: "Project log", item: { text: long } };
+  const [note, ent] = notesAbout([plain, entry("Kaya entry", `Deniz ${"c".repeat(1800)}`)], {
+    title: "x",
+    host: "a.com",
+    name: "Deniz Kaya",
+  });
+  assert.match(note.text, /Working with Deniz Kaya/);
+  assert.ok(note.text.length <= 1500);
+  assert.ok(ent.text.length > 1800);
+});
+
+test("at most five notes", () => {
+  const hits = Array.from({ length: 8 }, (_, i) => entry(`Note ${i}`, "About Deniz."));
+  assert.equal(notesAbout(hits, { title: "x", host: "a.com", name: "Deniz" }).length, 5);
 });

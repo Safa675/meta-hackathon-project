@@ -557,22 +557,16 @@ test("the surface a nudge was about travels in its evidence", () => {
 test("an answer about the chat does not mark the feed the person has moved to", () => {
   let r = step(initialState(), setIntent(t0), CFG);
   r = step(r.state, onSurface(t0, PLAIN, "unrelated"), CFG);
-  r = step(
-    r.state,
-    { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageSurface: "conversation" },
-    CFG,
-  );
+  const chatKey = relevanceKey(intent.id, ...FEED, CONVO);
+  r = step(r.state, { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageKey: chatKey }, CFG);
   assert.equal(r.state.current.label, "unrelated");
 });
 
 test("an answer about the surface in front marks it, also from a log with no surface", () => {
   let r = step(initialState(), setIntent(t0), CFG);
   r = step(r.state, onSurface(t0, CONVO, "unrelated"), CFG);
-  const a = step(
-    r.state,
-    { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageSurface: "conversation" },
-    CFG,
-  );
+  const chatKey = relevanceKey(intent.id, ...FEED, CONVO);
+  const a = step(r.state, { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageKey: chatKey }, CFG);
   assert.equal(a.state.current.label, "related");
   let old = step(initialState(), setIntent(t0), CFG);
   old = step(old.state, ctx(t0, FEED, "unrelated"), CFG);
@@ -605,4 +599,13 @@ test("when the notes change, the page in front is judged again and holds the bud
   const budget = r.state.budgetSec;
   r = step(r.state, tick(t0 + 30 * S), CFG);
   assert.equal(r.state.budgetSec, budget);
+});
+
+test("an answer about one person's chat does not mark another person's", () => {
+  const other = { kind: "conversation", labels: ["Deniz"] };
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, other, "unrelated"), CFG);
+  const aliKey = relevanceKey(intent.id, ...FEED, CONVO);
+  r = step(r.state, { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageKey: aliKey }, CFG);
+  assert.equal(r.state.current.label, "unrelated");
 });

@@ -46,7 +46,7 @@ At a natural moment -> pickReminder (pure) -> line + three answers
 
 - **`pageRegion`** in `src/background/page.js`: done (step 1).
 - **Surface in keys and labels:** `relevanceKey`, `labelKeys` (`src/attention/relevance.js`), per person. A page's label covers its conversations, never the other way. A conversation is no return point. Done (step 2).
-- **`notesFor`** in `src/background/index.js`: `memory.recall`, 5 hits. Entries whole; plain notes capped. The goal stays out of the query, so a page nothing is known about keeps the plain prompt. Goes through `privateSettings()` (`AGENTS.md` rule 5).
+- **`notesFor`** in `src/background/index.js`: `memory.recall` finds candidates on any word, and `notesAbout` (`src/attention/relevance.js`) keeps the notes that name the person, or the site, or two title words. Up to 5, redacted; entries whole, plain notes cut around the match. The goal stays out of the query, so a page nothing is known about keeps the plain prompt. Goes through `privateSettings()` (`AGENTS.md` rule 5).
 - **`NOTES_RULE`** in `src/agent/relevance.js`: added to the system prompt only when notes were found.
 - **Memory changes:** the options page sends `memory-changed`. The worker clears the relevance cache and feeds a `session` input of kind `memory`, so the page in front is judged again. Memory's own reads notice the import (#20).
 - **Two-way labels:** `nextLabel` and `labelHolds` gain `against` days. "Take me back" adds one. A label lasts once its side has `labelDays` different days and more days than the other.

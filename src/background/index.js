@@ -7,6 +7,7 @@ import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import {
   hostOf,
+  notesAbout,
   relevanceKey,
   labelKeys,
   builtinLabel,
@@ -234,7 +235,9 @@ const PLAIN_PAGE = { kind: "page", labels: [] };
 const REGION_WAIT_MS = 500;
 async function surfaceOf(tabId, url, { browserFocused }) {
   if (!url || !browserFocused || !mayRead(url, await readingNow())) return PLAIN_PAGE;
-  const region = await Promise.race([inPage(tabId, readRegion), sleep(REGION_WAIT_MS)]);
+  // Installed here, not when Tuck appears: a reload wipes it with the tab and URL unchanged.
+  const look = inPage(tabId, watchRegion).then(() => inPage(tabId, readRegion));
+  const region = await Promise.race([look, sleep(REGION_WAIT_MS)]);
   return region ?? PLAIN_PAGE;
 }
 
@@ -271,23 +274,28 @@ async function knownLabel(intent, url, title, cfg, surface) {
   return cacheUsable(page, now) ? usable(page) : {};
 }
 
-// The person's own notes about this page or this person, from memory's search. Entries
-// whole, short by nature; a plain note can run to hundreds of thousands of characters,
-// so it is capped. The goal stays out of the query: a page nothing is known about keeps
-// the plain prompt.
-const NOTES_MAX = 5;
-const NOTE_CHARS = 1500;
+// The person's own notes about this page or this person: memory's search finds
+// candidates on any shared word, notesAbout keeps those really about it. The goal stays
+// out of the query: a page nothing is known about keeps the plain prompt.
+const NOTES_SEARCHED = 20;
 async function notesFor(url, title, surface) {
-  const query = [title, hostOf(url), surface?.labels?.[0]].filter(Boolean).join(" ");
-  const hits = await (await memory).recall(query, { limit: NOTES_MAX }).catch(() => []);
-  return hits.map(({ title: noteTitle, item }) => ({
-    topic: item.topic ?? "notes",
-    title: noteTitle,
-    text: (
-      item.text?.slice(0, NOTE_CHARS) ??
-      [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ")
-    ).replace(/\s+/g, " "),
+  const name = surface?.labels?.[0];
+  const query = [title, hostOf(url), name].filter(Boolean).join(" ");
+  const hits = await (await memory).recall(query, { limit: NOTES_SEARCHED }).catch(() => []);
+  return notesAbout(hits, { title, host: hostOf(url), name }).map((note) => ({
+    topic: note.topic,
+    title: redact(note.title).text,
+    text: redact(note.text).text,
   }));
+}
+
+// The person's notes changed. What was judged without them is judged again, and an
+// answer already on its way, judged from the old notes, is not kept (memoryGeneration).
+let memoryGeneration = 0;
+async function memoryChanged() {
+  memoryGeneration += 1;
+  await (await store).clearCached();
+  await feed({ type: "session", ts: Date.now(), kind: "memory" });
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => sense(() => chrome.tabs.get(tabId)));
@@ -317,6 +325,7 @@ function askRelevance(need) {
 async function judge(need) {
   const s = await loadEngine();
   if (!s.intent) return;
+  const generation = memoryGeneration;
   const settings = await loadModelSettings();
   // What the call really uses, so the log below names it and not the saved preset.
   const used = privateSettings(settings ?? {});
@@ -352,6 +361,7 @@ async function judge(need) {
     ok: r.source === "llm",
     ...(r.error && { error: r.error }),
   });
+  if (generation !== memoryGeneration) return; // judged from notes since replaced: asked again
   // Fallbacks too, briefly (cacheUsable), so a model that is down is not called on every visit.
   await st.putCached({ key: need.key, label: r.label, confidence: r.confidence, source: r.source, ts: Date.now() });
   await feed({
@@ -440,6 +450,7 @@ function excerptVerdict(need, from) {
 // field the person types in) or "view" (the middle of the window). A verdict counts for
 // cfg.lookHoldMin minutes, so a page is not read again on every drift word.
 async function judgeExcerpt(need, from) {
+  const generation = memoryGeneration;
   const cfg = await config();
   const st = await store;
   if (!mayRead(need.url, await readingNow())) return { skipped: "settings" };
@@ -483,6 +494,7 @@ async function judgeExcerpt(need, from) {
     ...(r.error && { error: r.error }),
   });
   if (r.source !== "llm") return { skipped: "model failed" };
+  if (generation !== memoryGeneration) return { skipped: "notes changed" };
   await st.putCached({
     key: cacheKey,
     label: r.label,
@@ -614,7 +626,6 @@ async function presence(prev, s, input) {
   const away = ["break", "paused"].includes(s.state);
   // Typing is noted from the start of the page (its time only), for the second look.
   if (s.intent && !away) await inPage(input.tabId, watchTyping);
-  if (s.intent && !away) await inPage(input.tabId, watchRegion);
   if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
   else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
 }
@@ -651,7 +662,7 @@ async function respond({ choice }) {
       triggerId: lastTrigger?.id ?? null,
       choice,
       pageUrl: page?.url,
-      pageSurface: page?.surface?.kind,
+      pageKey: page?.key,
       latencyMs: lastTrigger ? ts - lastTrigger.ts : null,
     });
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
@@ -724,10 +735,12 @@ async function markRelated(page, intent, ts) {
   ).add({
     kind: "preference",
     topic: intent.topic,
-    title: `${chat ? `Conversations on ${page.host} count` : `${page.host} counts`} as work for ${intent.topic}`.slice(
-      0,
-      120,
-    ),
+    // One person's answer says nothing of the rest of the site.
+    title:
+      `${chat ? `Conversations with ${page.surface.labels?.[0] ?? "this person"} on ${page.host} count` : `${page.host} counts`} as work for ${intent.topic}`.slice(
+        0,
+        120,
+      ),
     context: "Marked by the user from a nudge.",
     result: "related",
   });
@@ -844,7 +857,7 @@ const HANDLERS = {
   "sync-brain": async () => {
     const r = await (await memory).syncBrain();
     if (r.connected && !r.needsPermission) {
-      await (await store).clearCached();
+      await memoryChanged();
       refreshProfile().catch(() => {});
     }
     return r;
@@ -853,8 +866,7 @@ const HANDLERS = {
   // An import ran in the settings page. Memory's own reads notice it; what was judged
   // without the new notes is judged again.
   "memory-changed": async () => {
-    await (await store).clearCached();
-    await feed({ type: "session", ts: Date.now(), kind: "memory" });
+    await memoryChanged();
     return sense(activeTab);
   },
   "get-profile": async () => ({

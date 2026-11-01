@@ -89,6 +89,7 @@ function evidence(s, ts, cfg) {
     host: s.current?.host ?? "",
     title: s.current?.title ?? "",
     surface: s.current?.surface ?? null,
+    key: s.current?.key ?? null,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -209,9 +210,10 @@ function applyResponse(s, input, cfg) {
     s.lastDriftTs = null;
   }
   // The nudged page; the person may have moved on since (pageUrl absent: the page in front).
-  // On one URL a chat and a feed are different pages (pageSurface absent: an older log).
-  const sameSurface = !input.pageSurface || input.pageSurface === (s.current?.surface?.kind ?? "page");
-  const nudgedIsCurrent = (!input.pageUrl || input.pageUrl === s.current?.url) && sameSurface;
+  // On one URL a chat, another chat and a feed are different pages (pageKey absent: an older log).
+  const nudgedIsCurrent = input.pageKey
+    ? input.pageKey === s.current?.key
+    : !input.pageUrl || input.pageUrl === s.current?.url;
   if (input.choice === "related" && s.current && nudgedIsCurrent) {
     Object.assign(s.current, { label: "related", confidence: 1, pending: false, source: "label" });
     const last = s.timeline.at(-1);
