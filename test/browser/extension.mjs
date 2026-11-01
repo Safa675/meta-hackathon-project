@@ -78,6 +78,16 @@ const server = http.createServer((req, res) => {
             '<div id="docked-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
         </script>`,
     );
+  // The same layout on a social site, which the fake model calls unrelated.
+  if (req.url === "/docked-social")
+    return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+      `<title>Cats | Social</title><main style="height:3000px"><p>A post about cats.</p></main>` +
+        `<div id="outlet" style="position:fixed;bottom:0;right:0"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div role="dialog" aria-label="Messaging"><h2>Ali Demir</h2>' +
+            '<div id="social-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
+        </script>`,
+    );
   // The full messaging page: no dialog, the box is in the main area.
   if (req.url === "/messaging/thread/1")
     return res
@@ -129,6 +139,7 @@ const side = `http://localhost:${port}/side`;
 const login = `http://localhost:${port}/login`;
 const docked = `http://localhost:${port}/docked`;
 const thread = `http://localhost:${port}/messaging/thread/1`;
+const dockedSocial = `http://localhost:${port}/docked-social`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -375,12 +386,40 @@ await dockedTab.click("#thread-box");
 const threadChat = await surfaceAt(thread, "conversation");
 await dockedTab.close();
 
+// A chat's answer stays with the chat (issue #9): "This is for my task" in the conversation
+// silences it, and the feed on the same URL still drifts.
+const socialTab = await ctx.newPage();
+await socialTab.goto(dockedSocial);
+await socialTab.bringToFront();
+await socialTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await socialTab.click("#social-box");
+await surfaceAt(dockedSocial, "conversation");
+// The budget carries over from the last page, so a first word can come before the chat is
+// touched. It is about the page; the answer below has to be about the chat.
+let driftInChat = await waitForNewDrift(drift8.id);
+while (driftInChat.evidence.surface?.kind !== "conversation") driftInChat = await waitForNewDrift(driftInChat.id);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "related" }));
+const chatAfterAnswer = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
+// Away from Tuck, top left here: touching Tuck says nothing about where the person works.
+await socialTab.mouse.move(40, 400);
+await socialTab.mouse.wheel(0, 200);
+await surfaceAt(dockedSocial, "page");
+const driftOnFeed = await waitForNewDrift(driftInChat.id);
+await socialTab.click("#social-box");
+await surfaceAt(dockedSocial, "conversation");
+await popup.waitForTimeout(500);
+const backInChat = await popup.evaluate(async () => {
+  const { events } = await chrome.runtime.sendMessage({ type: "export-log" });
+  return events.filter((e) => e.type === "context").at(-1);
+});
+await socialTab.close();
+
 // Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
 // nothing is read: the chat page is a drift again.
 await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const driftOff = await waitForNewDrift(drift8.id);
+const driftOff = await waitForNewDrift(driftOnFeed.id);
 
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
@@ -479,6 +518,12 @@ assert.ok(
   !log.events.some((e) => JSON.stringify(e.surface ?? "").includes("secret plan")),
   "only the heading is read, not message text in labels",
 );
+assert.equal(driftInChat.evidence.surface.kind, "conversation", "the nudge says it was about the chat");
+const chatLabel = chatAfterAnswer.events.filter((e) => e.type === "feedback" && e.kind === "label").at(-1).payload;
+assert.match(chatLabel.key, /\|conversation$/, "the answer labels the conversation, not the site");
+assert.equal(driftOnFeed.evidence.url, dockedSocial, "the feed on the same URL still drifts");
+assert.equal(driftOnFeed.evidence.surface.kind, "page");
+assert.equal(backInChat.source, "label", "back in the chat, its label still holds");
 assert.equal(driftOff.evidence.url, chat, "with reading off, a cached verdict does not count");
 assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "settings"),

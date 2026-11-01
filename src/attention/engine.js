@@ -88,6 +88,7 @@ function evidence(s, ts, cfg) {
     url: s.current?.url ?? "",
     host: s.current?.host ?? "",
     title: s.current?.title ?? "",
+    surface: s.current?.surface ?? null,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -99,8 +100,10 @@ function evidence(s, ts, cfg) {
 
 function rememberRelated(s, ts) {
   // A page with no URL (this extension's own pages) is never a place to go back to, nor
-  // one that is work only by what its excerpt said (a chat on a feed page).
-  if (s.current?.label === "related" && !s.current.pending && s.current.url && s.current.source !== "look") {
+  // one that is work only by what its excerpt said (a chat on a feed page), nor a
+  // conversation: its URL opens the page around it, not the chat.
+  const chat = s.current?.surface?.kind === "conversation";
+  if (s.current?.label === "related" && !s.current.pending && s.current.url && s.current.source !== "look" && !chat) {
     const { tabId, url, title } = s.current;
     s.lastRelevant = { tabId, url, title, ts };
   }
@@ -148,6 +151,7 @@ function applyContext(s, input, candidates, cfg) {
     confidence: pending ? (same?.confidence ?? 0) : (input.confidence ?? 1),
     pending: pending ? (same ? same.pending : true) : false,
     source: pending ? (same?.source ?? null) : (input.source ?? null),
+    surface: input.surface ?? null,
   };
   const askedAt = s.asked[input.key];
   if (s.intent && s.current.pending && (askedAt == null || input.ts - askedAt >= cfg.relevanceRetrySec * S)) {
@@ -200,7 +204,9 @@ function applyResponse(s, input, cfg) {
     s.lastDriftTs = null;
   }
   // The nudged page; the person may have moved on since (pageUrl absent: the page in front).
-  const nudgedIsCurrent = !input.pageUrl || input.pageUrl === s.current?.url;
+  // On one URL a chat and a feed are different pages (pageSurface absent: an older log).
+  const sameSurface = !input.pageSurface || input.pageSurface === (s.current?.surface?.kind ?? "page");
+  const nudgedIsCurrent = (!input.pageUrl || input.pageUrl === s.current?.url) && sameSurface;
   if (input.choice === "related" && s.current && nudgedIsCurrent) {
     Object.assign(s.current, { label: "related", confidence: 1, pending: false, source: "label" });
     const last = s.timeline.at(-1);

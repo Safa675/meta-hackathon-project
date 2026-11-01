@@ -517,3 +517,72 @@ test("second look: hopping between pages faster than the model answers still get
   const { triggers } = run([...toVideo, ...pages], { until: t0 + 180 * S, cfg: LOOK });
   assert.equal(drifts(triggers)[0]?.ts, t0 + 75 * S);
 });
+
+// One URL and title, two surfaces (issue #9).
+const FEED = ["https://www.linkedin.com/feed/", "Feed | LinkedIn"];
+const CONVO = { kind: "conversation", labels: ["Ali"] };
+const PLAIN = { kind: "page", labels: [] };
+const onSurface = (ts, surface, label, source = "llm") =>
+  ctx(ts, FEED, label, {
+    surface,
+    source,
+    key: relevanceKey(intent.id, ...FEED, surface),
+  });
+
+test("moving between a chat and the feed on one URL is not a tab switch", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, PLAIN, "unrelated"), CFG);
+  const before = r.state.timeline.length;
+  for (let i = 1; i <= 8; i++) r = step(r.state, onSurface(t0 + i * S, i % 2 ? CONVO : PLAIN, "unrelated"), CFG);
+  assert.equal(r.state.timeline.length, before);
+});
+
+test("a chat that is work does not excuse the feed: drift counts again on the feed", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, CONVO, "related", "label"), CFG);
+  r = step(r.state, tick(t0 + 60 * S), CFG);
+  assert.equal(r.state.budgetSec, 0);
+  r = step(r.state, onSurface(t0 + 61 * S, PLAIN, "unrelated"), CFG);
+  assert.equal(r.state.current.label, "unrelated");
+  const { state } = run([tick(t0 + 62 * S)], { state: r.state, until: t0 + 100 * S });
+  assert.ok(state.budgetSec > 30);
+});
+
+test("the surface a nudge was about travels in its evidence", () => {
+  const { out } = run([setIntent(t0), onSurface(t0, CONVO, "unrelated")], { until: t0 + 60 * S });
+  const trigger = out.find((o) => o.type === "trigger" && o.kind === "drift");
+  assert.deepEqual(trigger.evidence.surface, CONVO);
+});
+
+test("an answer about the chat does not mark the feed the person has moved to", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, PLAIN, "unrelated"), CFG);
+  r = step(
+    r.state,
+    { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageSurface: "conversation" },
+    CFG,
+  );
+  assert.equal(r.state.current.label, "unrelated");
+});
+
+test("an answer about the surface in front marks it, also from a log with no surface", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, CONVO, "unrelated"), CFG);
+  const a = step(
+    r.state,
+    { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageSurface: "conversation" },
+    CFG,
+  );
+  assert.equal(a.state.current.label, "related");
+  let old = step(initialState(), setIntent(t0), CFG);
+  old = step(old.state, ctx(t0, FEED, "unrelated"), CFG);
+  old = step(old.state, { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0] }, CFG);
+  assert.equal(old.state.current.label, "related");
+});
+
+test("a conversation is no place to go back to: the URL opens the feed, not the chat", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, ctx(t0, REPO, "related"), CFG);
+  r = step(r.state, onSurface(t0 + S, CONVO, "related", "label"), CFG);
+  assert.equal(r.state.lastRelevant.url, REPO[0]);
+});

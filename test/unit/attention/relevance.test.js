@@ -127,3 +127,44 @@ test("labels saved before they expired: a site label no longer holds, a title la
   assert.ok(labelHolds({ ...old, key: "pitch|youtube.com|x", host: "youtube.com" }, at));
   assert.ok(!labelHolds(undefined, at));
 });
+
+// One URL and title can hold a chat and a feed (issue #9): their judgments stay apart.
+const CHAT = { kind: "conversation", labels: ["Ali"] };
+const PLAIN = { kind: "page", labels: [] };
+
+test("a conversation has its own relevance key; a page keeps the key it always had", () => {
+  const url = "https://www.linkedin.com/feed/";
+  const base = "i1|linkedin.com|feed | linkedin";
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn"), base);
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", PLAIN), base);
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", CHAT), `${base}|conversation`);
+});
+
+test("the name stays out of the key: it is one conversation surface", () => {
+  const url = "https://www.linkedin.com/feed/";
+  const other = { kind: "conversation", labels: ["Deniz"] };
+  assert.equal(relevanceKey("i1", url, "x", CHAT), relevanceKey("i1", url, "x", other));
+});
+
+test("a conversation looks at its own label first, then the page's; a page never at the conversation's", () => {
+  const url = "https://www.linkedin.com/feed/";
+  assert.deepEqual(labelKeys("shop", url, "x", CHAT), ["shop|linkedin.com|conversation", "shop|linkedin.com"]);
+  assert.deepEqual(labelKeys("shop", url, "x", PLAIN), ["shop|linkedin.com"]);
+  assert.deepEqual(labelKeys("shop", "https://x.com/home", "Home", CHAT), [
+    "shop|x.com|conversation",
+    "shop|x.com|home",
+    "shop|x.com",
+  ]);
+});
+
+test("a conversation label on a title-sensitive host expires like a site label", () => {
+  const cfg = withOverrides({ labelMin: 30, labelDays: 3 });
+  const page = { key: "shop|x.com|conversation", topic: "shop", host: "x.com", title: "Home", ts: 0, day: "d1" };
+  const label = nextLabel(null, { ...page, surface: "conversation" }, cfg);
+  assert.equal(label.surface, "conversation");
+  assert.equal(label.until, 30 * 60 * 1000);
+  assert.equal(labelHolds(label, 29 * 60 * 1000), true);
+  assert.equal(labelHolds(label, 31 * 60 * 1000), false, "x.com's title rule is about pages");
+  const titleLabel = nextLabel(null, { ...page, key: "shop|x.com|home" }, cfg);
+  assert.equal(titleLabel.until, null, "a title label on the same host still lasts");
+});

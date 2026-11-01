@@ -211,6 +211,7 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
   const ts = Date.now();
   const cfg = await config();
   const s = await engineState(cfg, ts);
+  const surface = await surfaceOf(tab.id, url, flags);
   return process({
     type: "context",
     ts,
@@ -218,11 +219,11 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
     url,
     host: hostOf(url),
     title,
-    key: relevanceKey(s.intent?.id ?? "none", url, title),
+    key: relevanceKey(s.intent?.id ?? "none", url, title, surface),
     audible: !!tab.audible,
-    surface: await surfaceOf(tab.id, url, flags),
+    surface,
     ...flags,
-    ...(await knownLabel(s.intent, url, title, cfg)),
+    ...(await knownLabel(s.intent, url, title, cfg, surface)),
   });
 }
 
@@ -239,18 +240,19 @@ async function surfaceOf(tabId, url, { browserFocused }) {
 
 // Built-in rules, then the user's labels, then a recent second look that found work,
 // then the cache. Unknown → the engine asks.
-async function knownLabel(intent, url, title, cfg) {
+async function knownLabel(intent, url, title, cfg, surface) {
   if (builtinLabel(url, OWN_PAGES)) return { label: "neutral", confidence: 1, source: "builtin" };
   if (!intent) return {};
   const st = await store;
   const now = Date.now();
-  for (const key of labelKeys(intent.topic, url, title)) {
+  for (const key of labelKeys(intent.topic, url, title, surface)) {
     const l = await st.getLabel(key);
     if (labelHolds(l, now)) return { label: l.label, confidence: 1, source: "label" };
   }
+  const key = relevanceKey(intent.id, url, title, surface);
   if (mayRead(url, await readingNow()))
     for (const from of ["focus", "view"]) {
-      const look = await st.getCached(`look|${from}|${relevanceKey(intent.id, url, title)}`);
+      const look = await st.getCached(`look|${from}|${key}`);
       if (
         look?.label === "related" &&
         look.confidence >= cfg.unsureConfidence &&
@@ -258,8 +260,10 @@ async function knownLabel(intent, url, title, cfg) {
       )
         return { label: "related", confidence: look.confidence, source: "look" };
     }
-  const cached = await st.getCached(relevanceKey(intent.id, url, title));
-  return cacheUsable(cached, Date.now()) ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
+  // The model judges URL and title here, the same for a chat and its page: no second call.
+  const own = await st.getCached(key);
+  const cached = cacheUsable(own, now) ? own : await st.getCached(relevanceKey(intent.id, url, title));
+  return cacheUsable(cached, now) ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => sense(() => chrome.tabs.get(tabId)));
@@ -294,7 +298,8 @@ async function judge(need) {
   const intent = (await st.activeIntent()) ?? s.intent;
   // Only labels that still hold: a site marked as work for one visit is no example.
   const examples = (await st.recentLabels(20))
-    .filter((l) => l.topic === intent.topic && labelHolds(l, Date.now()))
+    // Nor is a chat: the prompt sees only the page's URL and title.
+    .filter((l) => l.topic === intent.topic && labelHolds(l, Date.now()) && l.surface !== "conversation")
     .slice(0, 5)
     .map(({ host, title, label }) => ({ host, title, label }));
   let r;
@@ -609,6 +614,7 @@ async function respond({ choice }) {
       triggerId: lastTrigger?.id ?? null,
       choice,
       pageUrl: page?.url,
+      pageSurface: page?.surface?.kind,
       latencyMs: lastTrigger ? ts - lastTrigger.ts : null,
     });
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
@@ -650,16 +656,26 @@ async function takeMeBack(last) {
   }
 }
 
-// page: {url, host, title} from the trigger's evidence. On a whole site the label is
-// for this visit; memory hears about it once it lasts (relevance.js nextLabel).
+// page: {url, host, title, surface} from the trigger's evidence. On a whole site or in a
+// conversation the label is for this visit; memory hears about it once it lasts
+// (relevance.js nextLabel).
 async function markRelated(page, intent, ts) {
   const cfg = await config();
   const st = await store;
-  const key = labelKeys(intent.topic, page.url, page.title)[0];
+  const key = labelKeys(intent.topic, page.url, page.title, page.surface)[0];
   const prev = await st.getLabel(key);
+  const chat = page.surface?.kind === "conversation";
   const label = nextLabel(
     prev,
-    { key, topic: intent.topic, host: page.host, title: page.title, ts, day: dayKey(ts, cfg) },
+    {
+      key,
+      topic: intent.topic,
+      host: page.host,
+      title: page.title,
+      ts,
+      day: dayKey(ts, cfg),
+      ...(chat && { surface: "conversation" }),
+    },
     cfg,
   );
   await st.putLabel(label);
@@ -671,7 +687,10 @@ async function markRelated(page, intent, ts) {
   ).add({
     kind: "preference",
     topic: intent.topic,
-    title: `${page.host} counts as work for ${intent.topic}`.slice(0, 120),
+    title: `${chat ? `Conversations on ${page.host} count` : `${page.host} counts`} as work for ${intent.topic}`.slice(
+      0,
+      120,
+    ),
     context: "Marked by the user from a nudge.",
     result: "related",
   });

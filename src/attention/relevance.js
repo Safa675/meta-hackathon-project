@@ -28,33 +28,51 @@ export function normalizeTitle(title = "") {
     .slice(0, 120);
 }
 
-// Cache key: one judgment per goal and page.
-export function relevanceKey(intentId, url, title) {
-  return `${intentId}|${hostOf(url)}|${normalizeTitle(title)}`;
+// surface: where on the page the person works (background/page.js readRegion), or nothing.
+const inConversation = (surface) => surface?.kind === "conversation";
+
+// Cache key: one judgment per goal and page. One URL and title can hold a chat and a
+// feed, so a conversation has its own. The name stays out: it is one surface.
+export function relevanceKey(intentId, url, title, surface) {
+  const page = `${intentId}|${hostOf(url)}|${normalizeTitle(title)}`;
+  return inConversation(surface) ? `${page}|conversation` : page;
 }
 
 // User labels, most specific first. On sites where one host holds work and
-// play (YouTube), a label sticks to the title; elsewhere to the host.
-export function labelKeys(topic, url, title) {
+// play (YouTube), a label sticks to the title; elsewhere to the host. A conversation
+// has its own label first; what is said of the page covers it, never the other way.
+export function labelKeys(topic, url, title, surface) {
   const host = hostOf(url);
-  return TITLE_SENSITIVE.includes(host)
+  const page = TITLE_SENSITIVE.includes(host)
     ? [`${topic}|${host}|${normalizeTitle(title)}`, `${topic}|${host}`]
     : [`${topic}|${host}`];
+  return inConversation(surface) ? [`${topic}|${host}|conversation`, ...page] : page;
 }
 
-// "This is for my task". A title label (TITLE_SENSITIVE hosts) lasts. A whole-site
-// label says "this visit is work", not "this site is always work": it lasts
+// "This is for my task". A title label (TITLE_SENSITIVE hosts) lasts. A whole-site or
+// conversation label says "this visit is work", not "this is always work": it lasts
 // cfg.labelMin minutes, and for good only once given on cfg.labelDays different days.
-// day: the local day of ts (intents.js dayKey).
-export function nextLabel(prev, { key, topic, host, title, ts, day }, cfg) {
+// day: the local day of ts (intents.js dayKey). surface: "conversation", or nothing.
+export function nextLabel(prev, { key, topic, host, title, ts, day, surface }, cfg) {
   const days = [...new Set([...(prev?.days ?? []), day])];
-  const lasting = TITLE_SENSITIVE.includes(host) || days.length >= cfg.labelDays;
-  return { key, label: "related", topic, host, title, ts, days, until: lasting ? null : ts + cfg.labelMin * 60 * 1000 };
+  const titled = TITLE_SENSITIVE.includes(host) && surface !== "conversation";
+  const lasting = titled || days.length >= cfg.labelDays;
+  return {
+    key,
+    label: "related",
+    topic,
+    host,
+    title,
+    ts,
+    days,
+    until: lasting ? null : ts + cfg.labelMin * 60 * 1000,
+    ...(surface && { surface }),
+  };
 }
 
 export function labelHolds(label, now) {
   if (!label) return false;
-  if (TITLE_SENSITIVE.includes(label.host)) return true;
+  if (TITLE_SENSITIVE.includes(label.host) && label.surface !== "conversation") return true;
   // A site label saved before labels expired came from one click: it no longer holds.
   if (!label.days) return false;
   return label.until == null || now < label.until;
