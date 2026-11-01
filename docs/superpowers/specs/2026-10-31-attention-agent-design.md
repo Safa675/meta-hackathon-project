@@ -32,7 +32,7 @@ Judging criteria: creativity, technical ambition, whether it works. So: **the co
 - Using raw transcripts (cold layer).
 - Chrome Web Store publication (an optional "unlisted" submission is a bonus if time allows).
 - Extensions such as web search, MCP tools, quick actions.
-- Screenshots or reading page content (URL + title + signals only).
+- Screenshots. Page content only through the second look before a drift word (§10, issue #5).
 
 **Anti-goals (failure even if it technically works)**
 - A nagging companion: unfair warnings during research, repeating itself.
@@ -48,7 +48,7 @@ Judging criteria: creativity, technical ambition, whether it works. So: **the co
 - **Build:** The repo is plain ES modules with no build step. That stays; the only exception is an esbuild bundle for the agent if the LangGraph trial passes (§6.3).
 - **Model:** `muse-spark-1.3-contributor` (repo default, OpenAI-compatible, via `src/memory/model.js`). If not reachable from Turkey, `muse-spark-1.3`. No Muse Wonder. Budget: $150 API credit.
 - **Memory boundary:** `memory/` is Safa's. Not modified; only the `Memory` API (src/memory/README.md) is used. Small API additions, if ever needed, are requested from Safa.
-- **Privacy (v1, under test):** URL, title and tab signals only. No page content, no screenshots. If relevance accuracy cannot meet docs/INTENT.md's criteria from these alone, the signal is extended (§10).
+- **Privacy:** URL, title and tab signals; before a drift word about a page, a second look: typing (yes/no) and a short redacted excerpt, never kept (§10). No screenshots. (Until 2026-11-01: URL + title only, as a hypothesis; it failed on mixed sites, issue #5.)
 - **Language:** Code, comments, docs, prompts, template messages, UI text and the demo video are **English**. The companion's voice is minimal and friendly ("Take me back", "Give me 5" — not corporate, not robotic). If the user writes in another language, it answers in that language.
 - **Demo data:** No real brain. The repo ships a fake brain folder for the demo (`demo/brain/`, in brain format; unfinished work and a few notes) and a sample event log (`demo/eventlog.json`). Loaded via brain import and an "import event log" button on the options page; replay tests use the same log. The video can be re-recorded identically from this data.
 
@@ -244,11 +244,11 @@ Answers to the reviewer's questions, open to İrem's approval:
 2. **The old flow is removed.** İrem builds attention, UI/UX and the agent without basing them on Safa's trial (team decision). The 5-minute audit, the popup and the drift notification are replaced by the new flow; `agent/audit.js (removed 2026-11-01)` stays as reference, not wired. `test:e2e` is rewritten for the new flow (fake model: goal → drift → overlay → "Take me back"). The folder ownership table in the README is updated (`agent/` → İrem).
 3. **Dialogue runs in the side panel; one-shot calls in the service worker; no free text in the overlay.** The overlay bubble has only buttons and *Talk to me*; *Talk to me* opens the side panel and focuses its input. So the dialogue (LLM#2–#3) runs in the side panel context, where the LangGraph gate is tested. `composeNudge` (LLM#4), `classifyRelevance` (LLM#1) and `reflect` (LLM#5) are one-shot calls; they run as plain functions in the service worker and need no LangGraph.
 4. **Goals become open loops at day end.** An unfinished shadow goal gets `expiredAt` on the first active focus of a new local day (day boundary 04:00) or after ≥6 hours away; it no longer counts as active and `session_start` fires. The opening dialogue offers the expired goal as "yesterday you were here", alongside memory's open loops. The rule lives in attention, not in memory.
-5. **A broad host permission is accepted.** For the overlay to appear on its own at drift time, `scripting` + `<all_urls>` are needed. The content script only draws the avatar; it never reads page content. The privacy principle (URL + title only) is unchanged and stated plainly in the README. The Web Store submission is optional, so this is not a blocker.
+5. **A broad host permission is accepted.** For the overlay to appear on its own at drift time, `scripting` + `<all_urls>` are needed. The content script only draws the avatar. Since 2026-11-01 the background also runs two small functions in the page for the second look (§10, `src/background/page.js`); the README states what is read. The Web Store submission is optional, so this is not a blocker.
 
 ## 10. Notes for later (not in v1)
 
-- **A small page snippet for ambiguous pages.** v1 uses URL + title only; pages with generic titles ("Inbox – Gmail", "Notion", "Untitled document") count as neutral and are learned through labels. If the event log shows ambiguous pages are common: only when LLM#1 returns low confidence, the content script reads `h1` + meta description (≤300 chars), behind a settings toggle. Page bodies and email content are never read.
+- **The second look (built 2026-11-01, issue #5; plan: docs/plans/2026-11-01-second-look.md).** URL + title could not tell a work chat from a feed on one site. Before every drift word, the background checks whether the person is typing on the page (focus in a text field and a key in the last minute; yes/no). It reads up to 1,000 characters from where they type or from the middle of the window, a little ahead because that takes a model call (`read_ahead`). The excerpt is redacted, goes to a model that does not train on it, and only the verdict is kept. Never on pages with a password field or on the never-read sites (email among them); on by default, can be turned off.
 - **Avatar visual design** in a separate session; v1 uses a placeholder SVG.
 - **Safa's MCP server** (after measuring latency) and the **Muse Code connection** are later stages.
 
