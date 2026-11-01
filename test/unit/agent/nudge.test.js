@@ -63,3 +63,19 @@ test("the prompt gives the facts and the voice rules, not the raw URL", () => {
   assert.match(user.content, /Testing the extension/);
   assert.match(user.content, /second nudge/i);
 });
+
+test("today's date and a close deadline reach the prompt", () => {
+  const [system, user] = nudgeMessages({
+    ...input,
+    today: "Sunday 2026-11-01",
+    due: [{ title: "Hackathon submission", when: "tomorrow" }],
+  });
+  assert.match(user.content, /Today: Sunday 2026-11-01/);
+  assert.match(user.content, /Due soon:\n- Hackathon submission \(tomorrow\)/);
+  assert.match(system.content, /as a reminder: never as a/);
+});
+
+test("no deadline means no Due soon block at all", () => {
+  const [, user] = nudgeMessages({ ...input, today: "Sunday 2026-11-01", due: [] });
+  assert.doesNotMatch(user.content, /Due soon/);
+});

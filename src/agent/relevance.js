@@ -3,6 +3,7 @@
 // which never warns.
 import { extractJsonObject } from "./json.js";
 import { hostOf } from "../attention/relevance.js";
+import { renderProfile } from "./profile.js";
 
 export const LABELS = ["related", "unrelated", "neutral"];
 
@@ -15,12 +16,13 @@ const SYSTEM = [
   "- neutral: you cannot tell from the site and title (generic titles, inboxes,",
   "  dashboards, home pages)",
   "Confidence (0..1) says how clear the title makes it. The person's own past labels,",
-  "when given, show what counts as work for them; follow them.",
+  "when given, show what counts as work for them; follow them. What is known about",
+  "them says which subjects are theirs, and is weaker evidence than their own labels.",
   'Reply with one JSON object only: {"label": "related"|"unrelated"|"neutral",',
   '"confidence": number, "reason": one short sentence}.',
 ].join("\n");
 
-export function relevanceMessages({ intent, url, title, examples = [] }) {
+export function relevanceMessages({ intent, url, title, examples = [], profile = null }) {
   const steps = intent.steps?.length ? `Steps: ${intent.steps.join("; ")}` : null;
   const own = examples.length
     ? ["Their past labels:", ...examples.map((e) => `- ${e.host} "${e.title ?? ""}" → ${e.label}`)].join("\n")
@@ -28,6 +30,7 @@ export function relevanceMessages({ intent, url, title, examples = [] }) {
   const user = [
     `Goal: ${intent.title}`,
     steps,
+    renderProfile(profile),
     own,
     "",
     `Page site: ${hostOf(url)}`,

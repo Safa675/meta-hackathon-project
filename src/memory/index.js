@@ -3,7 +3,7 @@ import { makeEntry } from "./entry.js";
 import { loadBrain, openLoops } from "./brain.js";
 import { consolidate, entryId, entryKey } from "./consolidate.js";
 import { buildIndex, search, entryDoc, noteDoc } from "./recall.js";
-import { contextPack, renderPack, latestIntent } from "./context.js";
+import { contextPack, renderPack, latestIntent, taskQueue } from "./context.js";
 import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activity.js";
 import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
@@ -92,7 +92,11 @@ export class Memory {
     if ((await permission(dir, "readwrite", { prompt })) !== "granted") return { exported: 0, needsPermission: true };
     const pending = (await db.byStatus(this.#db, "log")).filter((e) => !e.path && !e.exported);
     for (const e of pending) await writeInboxEntry(dir, e, host);
-    await db.putAll(this.#db, "entries", pending.map((e) => ({ ...e, exported: true })));
+    await db.putAll(
+      this.#db,
+      "entries",
+      pending.map((e) => ({ ...e, exported: true })),
+    );
     return { exported: pending.length };
   }
 
@@ -114,8 +118,15 @@ export class Memory {
     // Rejected entries stay in the inbox with their errors attached; the rest leave it.
     // Redaction can change an accepted entry's id, so remove by the pending ids.
     const flagged = result.rejected.map(({ entry, errors }) => ({ ...entry, errors }));
-    await db.removeAll(this.#db, "entries", pending.map((e) => e.id));
-    await db.putAll(this.#db, "entries", [...result.accepted.map((e) => ({ ...e, ts: e.ts ?? Date.now() })), ...flagged]);
+    await db.removeAll(
+      this.#db,
+      "entries",
+      pending.map((e) => e.id),
+    );
+    await db.putAll(this.#db, "entries", [
+      ...result.accepted.map((e) => ({ ...e, ts: e.ts ?? Date.now() })),
+      ...flagged,
+    ]);
     this.#dirty();
     return {
       accepted: result.accepted.length,
@@ -138,6 +149,34 @@ export class Memory {
   async latestIntent() {
     await this.#load();
     return latestIntent(this.#entries);
+  }
+
+  // Open loops ordered by how little time is left; each carries `due` and `daysLeft`.
+  async taskQueue(opts) {
+    await this.#load();
+    return taskQueue(this.#entries, opts);
+  }
+
+  // ---- Profile -----------------------------------------------------------
+
+  // What an agent node reads to work out who this person is: the newest entries,
+  // trimmed to the three fields that say what they work on.
+  async profileSample({ limit = 60 } = {}) {
+    await this.#load();
+    return [...this.#entries]
+      .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+      .slice(0, limit)
+      .map(({ topic, title, next }) => ({ topic, title, next }));
+  }
+
+  // { summary, topics, workHosts } as the node returned it, or null before an import.
+  async profile() {
+    return (await db.getMeta(this.#db, "profile")) ?? null;
+  }
+
+  async setProfile(profile) {
+    await db.setMeta(this.#db, "profile", profile);
+    return profile;
   }
 
   // Set what the user is about to do. It becomes the stated intent the audit checks.
@@ -200,7 +239,12 @@ export class Memory {
     const last = act.spans.at(-1);
     if (!last) return { added: 0, rejected: [], reason: "no activity" };
     const { prompt } = await this.contextPack({ title: last.title, url: last.url });
-    const messages = distillMessages({ activityText: act.text, contextPrompt: prompt, topics: await this.topics(), date: today() });
+    const messages = distillMessages({
+      activityText: act.text,
+      contextPrompt: prompt,
+      topics: await this.topics(),
+      date: today(),
+    });
     const { entries, rejected } = parseEntries(await complete(messages), { date: today() });
     const added = [];
     for (const e of entries) added.push(await this.add(e));

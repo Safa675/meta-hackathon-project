@@ -12,6 +12,8 @@ import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
+import { buildProfile } from "../agent/profile.js";
+import { dueLabel, localDate } from "../memory/due.js";
 import { siteName } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { present } from "../tuck/present.js";
@@ -21,6 +23,21 @@ const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
 const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"] };
+
+const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekday: "long" })} ${localDate(d)}`;
+
+// The tasks close enough for Tuck to name out loud: due today or tomorrow, or missed
+// within the last week. Anything else never reaches the prompt, so it cannot be
+// nagged about — and a note whose deadline passed months ago cannot take the slot.
+const RECENTLY_MISSED = -7;
+
+async function dueSoon({ limit = 2 } = {}) {
+  const queue = await (await memory).taskQueue({ today: localDate(), limit: 10 }).catch(() => []);
+  return queue
+    .filter((e) => e.daysLeft != null && e.daysLeft <= 1 && e.daysLeft >= RECENTLY_MISSED)
+    .slice(0, limit)
+    .map((e) => ({ title: e.title, when: dueLabel(e.daysLeft) }));
+}
 
 // ---- Schedules -----------------------------------------------------------
 
@@ -249,6 +266,7 @@ async function judge(need) {
       url: need.url,
       title: need.title,
       examples,
+      profile: await (await memory).profile().catch(() => null),
     });
   } catch (err) {
     // No model set up: the page stays neutral.
@@ -330,6 +348,8 @@ async function writeDraft(s, level, cfg) {
     task: { title: intent?.title ?? s.intent.title, step: intent?.steps?.[0] },
     lastWork: s.lastRelevant?.title,
     hour: new Date().getHours(),
+    today: todayLabel(),
+    due: await dueSoon(),
   });
   await log({
     type: "llm",
@@ -402,9 +422,13 @@ async function presence(prev, s, input) {
 async function greet(tabId) {
   const st = await store;
   const expired = await st.latestIntent();
+  // The goal form offers what is running out first. The title stays exactly as it is
+  // stored: tapping the chip sends it straight to set-intent, so a "(tomorrow)" glued
+  // on here would become part of the goal, change its topic slug every day, and could
+  // push a long title past the 120-character limit an entry validates against.
   const loops = [
     ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
-    ...(await (await memory).openLoops()).map((e) => ({ title: e.title })),
+    ...(await (await memory).taskQueue({ today: localDate() })).map((e) => ({ title: e.title })),
   ];
   const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
   const shown = await showTuck(tabId, view);
@@ -481,6 +505,28 @@ async function markRelated(page, intent, ts) {
     context: "Marked by the user from a nudge.",
     result: "related",
   });
+}
+
+// ---- Who this person is (LLM#5) ------------------------------------------
+
+// One model call, at import and re-sync only, never on the nudge path. A failure
+// leaves the profile that was already stored, so relevance is never made worse.
+async function refreshProfile() {
+  const settings = await loadModelSettings();
+  if (!settings) return { profile: null, source: "no-model" };
+  const m = await memory;
+  const r = await buildProfile(modelClient(settings), await m.profileSample());
+  if (r.profile) await m.setProfile(r.profile);
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "buildProfile",
+    model: settings.model ?? settings.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: !!r.profile,
+    error: r.error,
+  });
+  return r;
 }
 
 // ---- Goals and modes -----------------------------------------------------
@@ -568,7 +614,16 @@ const HANDLERS = {
     showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
-  "sync-brain": () => memory.then((m) => m.syncBrain()),
+  "sync-brain": async () => {
+    const r = await (await memory).syncBrain();
+    if (r.connected && !r.needsPermission) refreshProfile().catch(() => {});
+    return r;
+  },
+  "refresh-profile": refreshProfile,
+  "get-profile": async () => ({
+    profile: await (await memory).profile(),
+    queue: await (await memory).taskQueue({ today: localDate() }),
+  }),
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {

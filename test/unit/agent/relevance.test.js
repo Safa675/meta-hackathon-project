@@ -88,3 +88,12 @@ test("the person's own labels are given as examples", () => {
   assert.match(user, /figma\.com/);
   assert.match(user, /related/);
 });
+
+test("what is known about the person reaches the prompt, and is absent without it", () => {
+  const profile = { summary: "Builds Bilun, a SUT rules engine.", topics: ["bilun", "meta-hackathon"] };
+  const [, withIt] = relevanceMessages({ ...input, profile });
+  assert.match(withIt.content, /About them: Builds Bilun, a SUT rules engine\. Their topics: bilun, meta-hackathon\./);
+
+  const [, without] = relevanceMessages(input);
+  assert.doesNotMatch(without.content, /About them:/);
+});
