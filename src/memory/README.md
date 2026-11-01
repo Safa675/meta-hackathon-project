@@ -66,6 +66,12 @@ await memory.distill(complete, { minutes: 60 });
 // Upkeep (background alarm)
 await memory.maintain();
 
+// Caches: entries and the search index are cached per instance. Every write stores a fresh
+// stamp, and a read reloads when the stamp changed, so the options page and the worker see
+// each other's writes on their next read.
+memory.refresh();                              // drop this instance's copy; the next read reloads
+await memory.version();                        // the stamp of the last write by any instance
+
 // Redaction for any text that leaves the device (a page excerpt): { text, count }
 import { redact } from "../memory/index.js";
 ```
@@ -124,4 +130,3 @@ Live check: `npm run test:live` (one ping and one distill), with `MODEL_API_KEY`
 - A brain folder chosen with the real folder picker: tests use an origin-private folder. Whether Chrome asks again for permission after a restart is unknown; `syncBrain()` reports `needsPermission` when it does.
 - Distill against a real model (the live script exists; it needs a key).
 - Embeddings: recall is keyword-only.
-- Known bug: a second `Memory` instance (the background worker) keeps its cached entries and index after an import made by another one (the options page), so `taskQueue`, `openLoops` and `recall` read stale data there (#18).

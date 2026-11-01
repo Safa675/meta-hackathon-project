@@ -132,6 +132,42 @@ const afterSync = await page.evaluate(async () => {
   return hits.filter((h) => h.title === "Cart drops items on reload").map((h) => h.item.path ?? "own");
 });
 
+// Two Memory instances on one database, as the options page and the background worker
+// are: an import made through one must show up in the other's next read, without a
+// restart. Before the version stamp, the second instance kept its first read for good.
+const twoInstances = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const entry = (title, next) =>
+    `---\nkind: todo\ntopic: demo\ntitle: "${title}"\ndate: 2026-11-01\nsource: manual\nhost: x\n---\nContext: c\nDecision/Result: r\nEvidence: none\nNext action: ${next}\n`;
+  const worker = await Memory.open("browser-test-3");
+  const options = await Memory.open("browser-test-3");
+  const titles = async (m) => (await m.openLoops()).map((e) => e.title).sort();
+
+  const empty = await titles(worker); // the worker loads and caches its copy here
+  await options.importFiles([
+    { path: "inbox/20261101T000000Z-x-y-aaaaaa.md", text: entry("First imported task", "do it") },
+  ]);
+  const afterImport = await titles(worker);
+
+  // The other direction: the options page has read (so cached) its copy, then the
+  // worker adds an entry of its own.
+  const optionsBefore = await titles(options);
+  await worker.add({
+    kind: "todo",
+    topic: "demo",
+    title: "Added by the worker",
+    context: "c",
+    result: "r",
+    next: "ship",
+  });
+  const optionsSees = await titles(options);
+
+  // refresh() drops the local copy, so the next read reloads it.
+  await options.refresh();
+  const afterRefresh = await titles(options);
+  return { empty, afterImport, optionsBefore, optionsSees, afterRefresh };
+});
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -160,4 +196,18 @@ assert.equal(memory2.again.exported, 0); // exported once only
 assert.equal(synced.connected, true, `sync: ${JSON.stringify(synced)}`);
 assert.equal(synced.entries, 1); // the exported entry came back from the brain inbox
 assert.deepEqual(afterSync, [memory2.exportedFiles[0] && `inbox/${memory2.exportedFiles[0].name}`]); // once, as the brain copy
+
+assert.deepEqual(twoInstances.empty, []);
+assert.deepEqual(
+  twoInstances.afterImport,
+  ["First imported task"],
+  "the worker's copy must pick up an import made elsewhere",
+);
+assert.deepEqual(twoInstances.optionsBefore, ["First imported task"]);
+assert.deepEqual(
+  twoInstances.optionsSees,
+  ["Added by the worker", "First imported task"],
+  "the other way round: an entry the worker adds must show in a page that had already read",
+);
+assert.deepEqual(twoInstances.afterRefresh, ["Added by the worker", "First imported task"]);
 console.log("browser test: ok");
