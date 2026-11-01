@@ -42,7 +42,8 @@ Never invent an invocation. If a command is missing here, ask for it, then add i
 3. **Small diffs.** Do not rewrite, reorganize, or reformat code the task did not require.
 4. **No new files as a side effect.** No extra README, summary, or report unless asked.
 5. **The person's notes never reach Contributor.** Meta may train on what
-   `muse-spark-1.3-contributor` is sent, and it is the default preset. Any model call
+   `muse-spark-1.3-contributor` is sent. Settings no longer offer it, but settings saved
+   earlier can still name it. Any model call
    carrying memory content goes through `privateSettings()` from `src/agent/relevance.js`.
    <!-- enforced by: nothing yet (test/unit/agent/relevance.test.js covers the helper only) -->
 

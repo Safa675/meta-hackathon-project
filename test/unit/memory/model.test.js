@@ -21,7 +21,9 @@ test("provider presets resolve to base URL and model", () => {
     apiKey: "k",
   });
   assert.equal(resolveConfig({ provider: "meta", apiKey: "k" }).model, "muse-spark-1.3");
-  assert.equal(resolveConfig({ apiKey: "k" }).model, "muse-spark-1.3-contributor"); // default
+  assert.equal(resolveConfig({ apiKey: "k" }).model, "muse-spark-1.3"); // default: plain Meta, never Contributor
+  // Settings saved while Contributor was offered must still load.
+  assert.equal(resolveConfig({ provider: "meta-contributor", apiKey: "k" }).model, "muse-spark-1.3-contributor");
   assert.equal(resolveConfig({ provider: "openrouter", apiKey: "k" }).model, "meta/muse-glimmer-30b");
   assert.equal(resolveConfig({ baseUrl: "https://x.test/v1/", model: "m", apiKey: "k" }).baseUrl, "https://x.test/v1");
   // Only the local Ollama server is plain http.
