@@ -9,7 +9,6 @@ const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
 
 const NAMES = {
-  "meta-contributor": "Meta · Muse Spark 1.3 Contributor",
   meta: "Meta · Muse Spark 1.3",
   openrouter: "OpenRouter · Muse Glimmer",
   ollama: "Local Ollama · Muse Glimmer",
@@ -20,11 +19,11 @@ const NAMES = {
   nebius: "Nebius · Muse Spark Open",
 };
 
-for (const id of Object.keys(PROVIDERS)) $("provider").append(new Option(NAMES[id] ?? id, id));
+for (const id of Object.keys(PROVIDERS))
+  if (id !== "meta-contributor") $("provider").append(new Option(NAMES[id] ?? id, id));
 
 function showProvider() {
   const p = $("provider").value;
-  $("contributor-note").hidden = p !== "meta-contributor";
   $("key-row").hidden = p === "ollama";
 }
 
@@ -38,10 +37,11 @@ function current() {
   };
 }
 
-const saved = await loadModelSettings();
-$("provider").value = saved?.provider ?? DEFAULT_PROVIDER;
-$("model").value = saved?.model ?? PROVIDERS[$("provider").value].model;
-$("key").value = saved?.apiKey ?? "";
+// Settings saved when Contributor was offered load as plain Meta; saving rewrites them.
+const saved = privateSettings((await loadModelSettings()) ?? {});
+$("provider").value = saved.provider ?? DEFAULT_PROVIDER;
+$("model").value = saved.model ?? PROVIDERS[$("provider").value].model;
+$("key").value = saved.apiKey ?? "";
 $("remember").checked = !!(await chrome.storage.local.get("modelSettings")).modelSettings;
 showProvider();
 

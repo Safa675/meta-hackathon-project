@@ -294,6 +294,8 @@ async function judge(need) {
   const s = await loadEngine();
   if (!s.intent) return;
   const settings = await loadModelSettings();
+  // What the call really uses, so the log below names it and not the saved preset.
+  const used = privateSettings(settings ?? {});
   const st = await store;
   const intent = (await st.activeIntent()) ?? s.intent;
   // Only labels that still hold: a site marked as work for one visit is no example.
@@ -304,7 +306,7 @@ async function judge(need) {
     .map(({ host, title, label }) => ({ host, title, label }));
   let r;
   try {
-    r = await classifyRelevance(modelClient(privateSettings(settings ?? {})), {
+    r = await classifyRelevance(modelClient(used), {
       intent,
       url: need.url,
       title: need.title,
@@ -319,7 +321,7 @@ async function judge(need) {
     type: "llm",
     ts: Date.now(),
     node: "classifyRelevance",
-    model: settings?.model ?? settings?.provider ?? null,
+    model: settings ? (used.model ?? used.provider) : null,
     latencyMs: r.latencyMs,
     ok: r.source === "llm",
     ...(r.error && { error: r.error }),
@@ -501,7 +503,8 @@ async function writeDraft(s, level, cfg) {
   const awayMs =
     (s.offTaskSince ? Date.now() - s.offTaskSince : 0) +
     (level === 1 ? cfg.toleranceSec * 1000 : cfg.escalateAfterSec * 1000);
-  const r = await composeNudge(modelClient(privateSettings(settings)), {
+  const used = privateSettings(settings);
+  const r = await composeNudge(modelClient(used), {
     kind: "drift",
     level,
     site: siteName(s.current.host),
@@ -517,7 +520,7 @@ async function writeDraft(s, level, cfg) {
     type: "llm",
     ts: Date.now(),
     node: "composeNudge",
-    model: settings.model ?? settings.provider ?? null,
+    model: used.model ?? used.provider ?? null,
     latencyMs: r.latencyMs,
     ok: r.source === "llm",
     ...(r.error && { error: r.error }),
@@ -704,13 +707,14 @@ async function refreshProfile() {
   const settings = await loadModelSettings();
   if (!settings) return { profile: null, source: "no-model" };
   const m = await memory;
-  const r = await buildProfile(modelClient(privateSettings(settings)), await m.profileSample());
+  const used = privateSettings(settings);
+  const r = await buildProfile(modelClient(used), await m.profileSample());
   if (r.profile) await m.setProfile(r.profile);
   await log({
     type: "llm",
     ts: Date.now(),
     node: "buildProfile",
-    model: settings.model ?? settings.provider ?? null,
+    model: used.model ?? used.provider ?? null,
     latencyMs: r.latencyMs,
     ok: !!r.profile,
     error: r.error,

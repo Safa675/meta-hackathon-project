@@ -54,7 +54,8 @@ medical or therapeutic help.
 
 - **Constraint:** deadline Nov 4 2026, 9:00 PM ET; judged on the demo video and the repo.
 - **Constraint:** Chromium MV3 extension, all JavaScript, no separate backend.
-- **Constraint:** Meta models (`muse-spark-1.3-contributor`, else `muse-spark-1.3`).
+- **Constraint:** Meta models, and `muse-spark-1.3` rather than `-contributor`: Meta may train on what
+  Contributor is sent, and Tuck sends people's notes.
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
 - **Constraint:** everything in English; the companion answers in the user's language.
 - **Constraint:** relevance is judged from URL and title, plus where the person is working
