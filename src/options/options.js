@@ -1,5 +1,7 @@
 import { Memory } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
+import { buildProfile } from "../agent/profile.js";
+import { dueLabel, localDate } from "../memory/due.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -81,6 +83,8 @@ $("connect").onclick = async () => {
     $("brain-status").textContent = "Reading…";
     const r = await memory.connectBrain(dir);
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
+    $("profile-status").textContent = "Reading…";
+    await showProfile(await readProfile());
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -93,12 +97,59 @@ $("sync").onclick = async () => {
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");
+    if (r.connected && !r.needsPermission) await showProfile(await readProfile());
   } catch (err) {
     $("brain-status").textContent = `Failed: ${err.message}`;
   }
 };
 
 $("brain-status").textContent = await brainStatus(await memory.brainState().catch(() => ({ connected: false })));
+
+// ---- What Tuck knows -----------------------------------------------------
+
+// The profile is read here rather than in the worker: this page holds the Memory
+// instance that just imported, so its entries are the fresh ones. The worker reads
+// the stored result straight from IndexedDB, so it sees this without a reload.
+//
+// It returns a note and never throws: an import that worked must not be reported as
+// failed just because the model is not set up yet.
+async function readProfile() {
+  try {
+    const settings = await loadModelSettings();
+    if (!settings) return "Set up a model above, then press Re-read my memory.";
+    const r = await buildProfile(modelClient(settings), await memory.profileSample());
+    if (r.source === "empty") return "No memory imported yet.";
+    if (!r.profile) return `Could not read your memory: ${r.error}`;
+    await memory.setProfile(r.profile);
+    return null;
+  } catch (err) {
+    return `Could not read your memory: ${err.message}`;
+  }
+}
+
+async function showProfile(note) {
+  const profile = await memory.profile();
+  const queue = await memory.taskQueue({ today: localDate(), limit: 5 });
+  const lines = [
+    note,
+    profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",
+    profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
+    queue.length ? "\nWhat is running out:" : null,
+    ...queue.map((e) => `- ${e.title}${e.due ? ` — due ${e.due} (${dueLabel(e.daysLeft)})` : " — no date"}`),
+  ].filter(Boolean);
+  $("profile-status").textContent = lines.join("\n");
+}
+
+$("reread").onclick = async () => {
+  $("profile-status").textContent = "Reading…";
+  try {
+    await showProfile(await readProfile());
+  } catch (err) {
+    $("profile-status").textContent = `Failed: ${err.message}`;
+  }
+};
+
+await showProfile();
 
 // ---- Event log -----------------------------------------------------------
 

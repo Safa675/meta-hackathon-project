@@ -15,6 +15,8 @@ const SYSTEM = [
   "  never seconds",
   "- say their task the way they would say it out loud, shortened; prefer the next step",
   "- reply in the language the task is written in",
+  "- anything under 'Due soon' may be named once, plainly, as a reminder: never as a",
+  "  warning, never with blame, and never more than one of them in a line",
   "The voice to copy (İrem's examples):",
   '- "Still on YouTube? Let\'s get back to testing the extension."',
   '- "That\'s 5 minutes on LinkedIn. Back to the hackathon project?"',
@@ -37,7 +39,10 @@ const SITUATION = {
   break_over: () => "Their break just ended: invite them back.",
 };
 
-// input: {kind, level, site, awayMin, unsure, task: {title, step}, lastWork, hour}
+// input: {kind, level, site, awayMin, unsure, task: {title, step}, lastWork, hour,
+//         today, due: [{title, when}]}
+// `due` holds only what the caller judged close enough to say aloud — the model is
+// never handed a deadline it is not allowed to mention.
 export function nudgeMessages(input) {
   const situation = (input.unsure ? SITUATION.unsure : SITUATION[input.kind])?.(input) ?? "";
   const user = [
@@ -47,7 +52,9 @@ export function nudgeMessages(input) {
     input.site ? `Site now: ${input.site}` : null,
     `Away from work: ${input.awayMin ?? 0} minutes`,
     input.lastWork ? `Last work page: ${input.lastWork}` : null,
+    input.today ? `Today: ${input.today}` : null,
     input.hour != null ? `Local hour: ${input.hour}` : null,
+    ...(input.due?.length ? ["Due soon:", ...input.due.map((d) => `- ${d.title} (${d.when})`)] : []),
   ]
     .filter(Boolean)
     .join("\n");
