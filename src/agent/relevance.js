@@ -56,25 +56,49 @@ export function privateSettings(settings = {}) {
   return { ...settings, provider: "meta", model };
 }
 
-export function relevanceMessages({ intent, url, title, examples = [], profile = null, excerpt }) {
+// The person's own notes the memory search found for this page, when it found any.
+const NOTES_RULE = [
+  "Their own notes, when given, say what they work on and with whom. A conversation with",
+  "someone the notes tie to the goal is related, whatever the site or title says. A name",
+  "or word that also appears in a note proves nothing by itself: the note must be about",
+  "this person or this page, and about the goal. With no conversation named, a feed stays",
+  "a feed, whatever the notes say.",
+].join("\n");
+
+export function relevanceMessages({
+  intent,
+  url,
+  title,
+  examples = [],
+  profile = null,
+  excerpt,
+  notes = [],
+  conversationWith,
+}) {
   const steps = intent.steps?.length ? `Steps: ${intent.steps.join("; ")}` : null;
   const own = examples.length
     ? ["Their past labels:", ...examples.map((e) => `- ${e.host} "${e.title ?? ""}" → ${e.label}`)].join("\n")
+    : null;
+  const found = notes.length
+    ? ["From their own notes:", ...notes.map((n) => `- [${n.topic}] ${n.title}: ${n.text}`)].join("\n")
     : null;
   const user = [
     `Goal: ${intent.title}`,
     steps,
     renderProfile(profile),
     own,
+    found,
     "",
     `Page site: ${hostOf(url)}`,
     `Page title: ${title || "(no title)"}`,
+    found && conversationWith ? `In a conversation with: ${conversationWith}` : null,
     excerpt ? `Page excerpt: ${excerpt}` : null,
   ]
     .filter((l) => l !== null)
     .join("\n");
+  const system = excerpt ? SYSTEM_EXCERPT : SYSTEM;
   return [
-    { role: "system", content: excerpt ? SYSTEM_EXCERPT : SYSTEM },
+    { role: "system", content: found ? `${system}\n${NOTES_RULE}` : system },
     { role: "user", content: user },
   ];
 }

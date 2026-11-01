@@ -1,17 +1,19 @@
-# Notes decide what a page means: page region, facts and reminders
+# Notes decide what a page means: page region, notes in the prompt and reminders
 
 Status: open
 
-Issues: #9 (page region), #8 (facts and labels), #10 (reminders), #16 (memory, Safa)
+Issues: #9 (page region), #8 (notes and labels), #10 (reminders), #18 (stale index, Safa)
 
 ## Intent
 Serves: `docs/INTENT.md` § Outcome ("the better it knows which detours are fine for you") and § Invariants ("Both errors count", "Facts and timing are deterministic").
 
-Change: no fact about the person can decide a label today. A note saying "working with İrem on the hackathon" should mean a conversation with İrem gets no nudge and the feed on the same URL does, with no model call at decision time.
+Change: no fact about the person can decide a label today. A note saying "working with İrem on the hackathon" should mean a conversation with İrem gets no nudge and the feed on the same URL does.
 
 **Conflict to settle in this work:** `docs/INTENT.md` § Constraints and `AGENTS.md` § Project say page content is read only right before a drift word. `pageRegion` reads a conversation's heading when the person works in it. Update both, and `docs/DECISIONS.md`, in the first PR.
 
-Out of scope: Muse Code (#11), avatar work, chat, per-host learned tolerance, activity-based budget rates, screenshots, per-site scraping.
+Out of scope: Muse Code (#11), avatar work, chat, facts or any extraction from notes, per-host learned tolerance, activity-based budget rates, screenshots, per-site scraping. Exports into entries stay in #6.
+
+*Changed 2026-11-01:* the facts design was dropped after Safa's review. The notes are already distilled, and the canonical form is their own record (`src/memory/README.md`, Entry format).
 
 ## Design
 
@@ -35,57 +37,50 @@ Confirmed on LinkedIn: when the chat sits at the middle of the window and nothin
 ### Nodes
 
 ```text
-Note -> buildProfile (facts added) -> verifyFacts -> "What Tuck knows" card -> cfg.personal
-Page -> pageRegion -> context.surface -> personRule (pure, no model) -> engine
+Page or chat -> pageRegion -> context.surface
+             -> recall(title + host + name)         code, local
+  no notes   -> plain prompt; a chat reuses its page's verdict, no second call
+  notes      -> classifyPage + up to 5 notes -> cached per goal, page and person
 At a natural moment -> pickReminder (pure) -> line + three answers
 ```
 
-- **`pageRegion`** in `src/background/page.js`, self-contained like its neighbours. On `pointerdown` and `wheel`, walk `composedPath()` up to `body`. Result is `conversation` when:
-  - a `role="dialog"` element contains a textbox; or
-  - the URL path contains a messaging word (`messag`, `chat`, `inbox`, `thread`) and the event is inside a `main` that contains a textbox. This restriction keeps a feed comment box from counting as a conversation.
-
-  Otherwise `page`. Labels: the container's first heading only. On a change, send the existing `record-active` message (`src/background/index.js:768`).
-- **`context.surface`**: read in `contextJob` (`src/background/index.js:189`), logged raw on the `context` input so replay sees it. `INPUTS` in `src/attention/replay.js:8` drops unknown types, so no new input type.
-- **Surface in keys**: `relevanceKey`, `labelKeys` (`src/attention/relevance.js:32,38`) and the look cache key (`src/background/index.js:241`) gain a conversation suffix. `evidence` (`src/attention/engine.js:85`) carries the surface.
-- **Facts**: shape in #8. `chrome.storage.local` `personal`, merged into `cfg.personal`. `buildProfile` (`src/agent/profile.js:64`) returns `people` and `projects`; new pure `verifyFacts`. Needs #16.
-- **`personRule`** in `src/attention/relevance.js`, called from `applyContext` (`src/attention/engine.js:109`). Source `person` is never a return point (`rememberRelated`, `src/attention/engine.js:100`). The worker's logged label excludes it, so replay with another `cfg.personal` differs.
-- **Label order** in `knownLabel` (`src/background/index.js:230`) and the engine: built-in; own `related` label; `personRule`, yielding to an own `unrelated` label; fresh look `related`; own `unrelated` label; project host; cache; model.
-- **Two-way labels**: `nextLabel` and `labelHolds` (`src/attention/relevance.js`) gain `against` days. "Take me back" (`src/background/index.js:606`) adds one. Lasting needs `labelDays` days on that side and more days than the other.
-- **`pickReminder`**: new `src/attention/reminders.js`; state `loops` in `chrome.storage.local`; `doneAt` also filters `dueSoon` (`src/background/index.js:45`).
-- **`other_commitment`**: fourth label in `src/agent/relevance.js:7`, with a short list from `taskQueue()`.
+- **`pageRegion`** in `src/background/page.js`: done (step 1).
+- **Surface in keys and labels:** `relevanceKey`, `labelKeys` (`src/attention/relevance.js`), per person. A page's label covers its conversations, never the other way. A conversation is no return point. Done (step 2).
+- **`notesFor`** in `src/background/index.js`: `memory.recall`, 5 hits. Entries whole; plain notes capped. The goal stays out of the query, so a page nothing is known about keeps the plain prompt. Goes through `privateSettings()` (`AGENTS.md` rule 5).
+- **`NOTES_RULE`** in `src/agent/relevance.js`: added to the system prompt only when notes were found.
+- **Memory changes:** the options page sends `memory-changed`. The worker opens a fresh `Memory`, clears the relevance cache, and feeds a `session` input of kind `memory`, so the page in front is judged again. When #18 lands, the fresh `Memory` is replaced by whichever fix it picks.
+- **Two-way labels:** `nextLabel` and `labelHolds` gain `against` days. "Take me back" adds one. A label lasts once its side has `labelDays` different days and more days than the other.
+- **`pickReminder`:** new `src/attention/reminders.js`; state `loops` in `chrome.storage.local`, by entry id, so "done" survives a re-import; `doneAt` also filters `dueSoon`.
+- **`other_commitment`:** fourth label in `src/agent/relevance.js`, with a short list from `taskQueue()`.
 
 Flagged concerns:
-- A first name can match the wrong person. The card corrects it; scrolling the feed always ends the match.
+- `recall` is keyword search: good on names, weak on paraphrase. The model rejects wrong matches (another Ali, "Create post"); eval cases cover this.
 - A chat with one known person about something else counts as work. Accepted.
-- Step 3 onward depends on #16. Until it lands, build against a fixture with the agreed shape.
-- LinkedIn's markup can change. The rule uses roles and headings, not its class names; the fallback is `page`, which behaves as today.
+- The two-memory scene is tested end to end, not by replay, because labels are recorded on the inputs.
+- LinkedIn's markup can change. The rule uses roles and headings, not class names; the fallback is `page`, which behaves as today.
 
 ## Plan
 
 Each step is its own commit and leaves `npm test` green.
 
-| # | Build | Files | You can see |
+| # | Build | You can see | State |
 |---|---|---|---|
-| 1 | `pageRegion`, `context.surface`, docs conflict settled | `src/background/page.js`, `src/background/index.js`, `AGENTS.md`, `docs/INTENT.md`, `docs/DECISIONS.md` | The event log shows `conversation` and the name |
-| 2 | Surface in keys, labels, evidence | `src/attention/relevance.js`, `src/attention/engine.js`, `src/background/index.js` | An answer in a chat does not excuse the feed |
-| 3 | Facts, `verifyFacts`, card | `src/agent/profile.js`, `src/options/` | The card shows name and quote; a fake quote is rejected |
-| 4 | `personRule`, `cfg.personal`, label order | `src/attention/relevance.js`, `src/attention/engine.js`, `src/background/index.js` | Same page, two memories, two responses |
-| 5 | Two-way labels, project as `topic` | `src/attention/relevance.js`, `src/background/index.js`, `src/attention/intents.js` | "Take me back" teaches |
-| 6 | `pickReminder`, answers, greeting | `src/attention/reminders.js`, `src/tuck/`, `src/agent/nudge.js`, `src/background/index.js` | "Closes today, did it go in?" |
-| 7 | `other_commitment` | `src/agent/relevance.js`, `src/tuck/`, `evals/` | A page for another commitment gets no nudge |
-| 8 | Recorded session, evals | `test/fixtures/`, `evals/` | Both error rates reported |
-
-Risk: step 2 changes keys, so existing caches and labels stop matching for conversations. Step 5 changes what #13's label e2e expects; update those tests consciously, never weaken them.
+| 1 | `pageRegion`, `context.surface` | The event log shows `conversation` and the name | done |
+| 2 | Surface in keys, labels, evidence | An answer in a chat does not excuse the feed | done |
+| 3 | Notes in the prompt, per-person keys, judging again on import | Same chat, two memories, two responses | done |
+| 4 | Two-way labels | "Take me back" teaches | next |
+| 5 | `pickReminder`, answers, greeting | "Closes on 2026-11-04, did it go in?" | |
+| 6 | `other_commitment` | A page for another commitment gets no nudge | |
+| 7 | Recorded session, full evals | Both error rates reported | |
 
 ## Test plan
 
 Tier: unit, replay and integration (e2e against the fake model). Eval for the prompt changes.
 
 New cases:
-- e2e, extending the docked-chat page (`test/browser/extension.mjs:52`), with the chat in an open shadow root like LinkedIn's: touching the chat gives `conversation`; scrolling the feed returns to `page`, with focus still in the box; a comment box in the feed stays `page`; a messaging URL's `main` counts.
-- Unit: `personRule` (match, no match, folding İ/I, `unrelated` label wins, not a return point); `verifyFacts` (fake quote, name not in quote); surface in keys; two-way labels (3 days, not 3 times in one day); `pickReminder` (moments only, once a day, done stays done).
-- Replay: one log with two `cfg.personal` values gives different triggers; a log without `surface` replays as `main` does.
-- Eval: about 10 fact-extraction cases on invented notes; `other_commitment` cases. Baseline `evals/baseline.json`. The #13 excerpt cases have not been run yet, so run them first to get a clean starting point.
-- Manual on real LinkedIn after steps 1 and 4.
+- e2e: touching a chat in an open shadow root gives `conversation`; scrolling the feed returns to `page`, with focus still in the box; a feed comment box stays `page`; a messaging URL's `main` counts; a chat's answer does not excuse the feed; the same chat is a drift with nothing known and work once the notes name the person, and the feed under it still drifts.
+- Unit: per-person keys; a page's key unchanged; two-way labels (3 days, not 3 times in one day); `pickReminder` (moments only, once a day, done stays done); notes in the prompt; no notes means the prompt is unchanged; the notes changing means asking again.
+- Eval: `notes-*` cases in `evals/relevance/cases.jsonl` (teammate, another Ali, generic dialog, a feed named in a note, Turkish), and `other_commitment` cases. `evals/baseline.json` does not exist yet, so the check is against the `docs/INTENT.md` thresholds.
+- Manual on real LinkedIn with the extension loaded, after step 3.
 
-Done when: `npm test`, `npm run test:browser` and `npm run test:e2e` all pass; `npm run eval` meets `docs/INTENT.md` (accuracy ≥ 85%, false "unrelated" ≤ 5%); and the two-profile replay test passes.
+Done when: `npm test`, `npm run test:browser` and `npm run test:e2e` all pass, and `npm run eval` meets `docs/INTENT.md` (accuracy ≥ 85%, false "unrelated" ≤ 5%).

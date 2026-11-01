@@ -132,26 +132,31 @@ test("labels saved before they expired: a site label no longer holds, a title la
 const CHAT = { kind: "conversation", labels: ["Ali"] };
 const PLAIN = { kind: "page", labels: [] };
 
-test("a conversation has its own relevance key; a page keeps the key it always had", () => {
+test("a conversation has its own relevance key per person; a page keeps the key it always had", () => {
   const url = "https://www.linkedin.com/feed/";
   const base = "i1|linkedin.com|feed | linkedin";
   assert.equal(relevanceKey("i1", url, "Feed | LinkedIn"), base);
   assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", PLAIN), base);
-  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", CHAT), `${base}|conversation`);
+  assert.equal(relevanceKey("i1", url, "Feed | LinkedIn", CHAT), `${base}|conversation|ali`);
+  assert.equal(
+    relevanceKey("i1", url, "Feed | LinkedIn", { kind: "conversation", labels: [] }),
+    `${base}|conversation`,
+  );
 });
 
-test("the name stays out of the key: it is one conversation surface", () => {
+test("what is known of one person says nothing of another", () => {
   const url = "https://www.linkedin.com/feed/";
   const other = { kind: "conversation", labels: ["Deniz"] };
-  assert.equal(relevanceKey("i1", url, "x", CHAT), relevanceKey("i1", url, "x", other));
+  assert.notEqual(relevanceKey("i1", url, "x", CHAT), relevanceKey("i1", url, "x", other));
+  assert.notEqual(labelKeys("shop", url, "x", CHAT)[0], labelKeys("shop", url, "x", other)[0]);
 });
 
 test("a conversation looks at its own label first, then the page's; a page never at the conversation's", () => {
   const url = "https://www.linkedin.com/feed/";
-  assert.deepEqual(labelKeys("shop", url, "x", CHAT), ["shop|linkedin.com|conversation", "shop|linkedin.com"]);
+  assert.deepEqual(labelKeys("shop", url, "x", CHAT), ["shop|linkedin.com|conversation|ali", "shop|linkedin.com"]);
   assert.deepEqual(labelKeys("shop", url, "x", PLAIN), ["shop|linkedin.com"]);
   assert.deepEqual(labelKeys("shop", "https://x.com/home", "Home", CHAT), [
-    "shop|x.com|conversation",
+    "shop|x.com|conversation|ali",
     "shop|x.com|home",
     "shop|x.com",
   ]);

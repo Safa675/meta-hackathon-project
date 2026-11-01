@@ -586,3 +586,23 @@ test("a conversation is no place to go back to: the URL opens the feed, not the 
   r = step(r.state, onSurface(t0 + S, CONVO, "related", "label"), CFG);
   assert.equal(r.state.lastRelevant.url, REPO[0]);
 });
+
+test("the request to judge a page says who the conversation is with", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, CONVO), CFG);
+  assert.deepEqual(r.out.find((o) => o.type === "need_relevance").surface, CONVO);
+});
+
+test("when the notes change, the page in front is judged again and holds the budget meanwhile", () => {
+  let r = step(initialState(), setIntent(t0), CFG);
+  r = step(r.state, onSurface(t0, CONVO, "unrelated"), CFG);
+  r = step(r.state, onSurface(t0 + S, CONVO), CFG);
+  assert.equal(r.out.filter((o) => o.type === "need_relevance").length, 0, "the same page keeps its verdict");
+  r = step(r.state, { type: "session", ts: t0 + 2 * S, kind: "memory" }, CFG);
+  assert.equal(r.state.state, "focused", "no verdict yet: not drifting");
+  r = step(r.state, onSurface(t0 + 3 * S, CONVO), CFG);
+  assert.equal(r.out.filter((o) => o.type === "need_relevance").length, 1, "asked again");
+  const budget = r.state.budgetSec;
+  r = step(r.state, tick(t0 + 30 * S), CFG);
+  assert.equal(r.state.budgetSec, budget);
+});

@@ -6,6 +6,9 @@
 
 ## Decided
 
+**Notes reach the page decision through memory's search, with no second form (2026-11-01, issues #8, #6).**
+The notes are already distilled, so a facts layer on top of them would repeat that work. The canonical form is their own record; other sources become entries once, at import, in #6. The search finds candidates in code, with up to 5 notes going to the model for that page or person: the model is stateless, so sending every note means sending them all on every call, and the search alone also matches another Ali or a "Create post" dialog. It costs one model call per page or person with matching notes, and a replay cannot show two memories, so that scene is tested end to end.
+
 **Tuck notes which conversation the person last touched, by its heading, not only before a nudge (2026-11-01, issue #9).**
 Notes should decide what a page means: a conversation with someone the person works with is work, and the feed on the same URL is not. That needs the name, immediately and with no model call, and opening a chat fires no Chrome event. So a listener notes the last container touched (a dialog with a text box, or the main area on a messaging URL); touching anything else ends it, because the focus stays in the chat's box while the feed scrolls (seen on real LinkedIn). Only the heading is read, since LinkedIn's labels hold message text. It stays on this device, in the event log, and never runs on never-read sites or with reading off.
 

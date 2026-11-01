@@ -131,3 +131,26 @@ test("page text never goes to Meta's Contributor tier", () => {
   const other = { provider: "openrouter", apiKey: "k" };
   assert.equal(privateSettings(other), other);
 });
+
+// Notes reach the prompt only when the search found some (issue #8).
+const NOTES = [{ topic: "shop", title: "Checkout fix with Ali", text: "Working with Ali Demir on the checkout bug." }];
+
+test("notes and the person spoken to go into the prompt", () => {
+  const [system, user] = relevanceMessages({ ...input, notes: NOTES, conversationWith: "Ali Demir" });
+  assert.match(system.content, /own notes/);
+  assert.match(user.content, /From their own notes:\n- \[shop\] Checkout fix with Ali: Working with Ali Demir/);
+  assert.match(user.content, /In a conversation with: Ali Demir/);
+});
+
+test("with no notes the prompt is exactly as before, and a name alone is not sent", () => {
+  const plain = relevanceMessages(input);
+  assert.deepEqual(relevanceMessages({ ...input, notes: [] }), plain);
+  assert.deepEqual(relevanceMessages({ ...input, notes: [], conversationWith: "Ali Demir" }), plain);
+});
+
+test("the second look gets the notes too", () => {
+  const [system, user] = relevanceMessages({ ...input, excerpt: "see you tomorrow", notes: NOTES });
+  assert.match(system.content, /own notes/);
+  assert.match(user.content, /Page excerpt: see you tomorrow/);
+  assert.match(user.content, /Checkout fix with Ali/);
+});

@@ -163,6 +163,7 @@ function applyContext(s, input, candidates, cfg) {
       url: input.url,
       host: input.host,
       title: input.title,
+      surface: s.current.surface,
     });
   }
   rememberRelated(s, input.ts);
@@ -194,6 +195,10 @@ function applySession(s, input) {
     s.policy.episode = null;
   } else if (input.kind === "mode") {
     s.mode = input.payload.mode;
+  } else if (input.kind === "memory") {
+    // The person's notes changed: what the page in front means is an open question again.
+    s.asked = {};
+    if (s.current) Object.assign(s.current, { label: "neutral", confidence: 0, pending: true, source: null });
   }
 }
 
@@ -232,7 +237,16 @@ const looking = (s, cfg) => cfg.secondLook && !["dnd", "off"].includes(s.mode);
 function requestLook(s, ts, out) {
   const c = s.current;
   s.look = { key: c.key, askedTs: ts, answer: null };
-  out.push({ type: "need_second_look", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+  out.push({
+    type: "need_second_look",
+    ts,
+    key: c.key,
+    tabId: c.tabId,
+    url: c.url,
+    host: c.host,
+    title: c.title,
+    surface: c.surface,
+  });
 }
 
 function applySecondLook(s, input, cfg) {
@@ -352,7 +366,16 @@ export function step(prev, input, cfg = DEFAULTS) {
   ) {
     const c = s.current;
     s.readAheadKey = c.key;
-    out.push({ type: "read_ahead", ts, key: c.key, tabId: c.tabId, url: c.url, host: c.host, title: c.title });
+    out.push({
+      type: "read_ahead",
+      ts,
+      key: c.key,
+      tabId: c.tabId,
+      url: c.url,
+      host: c.host,
+      title: c.title,
+      surface: c.surface,
+    });
   }
   if (core === "drifting") {
     // Every drift word is looked at first, when it is due: typing then is what counts.

@@ -29,7 +29,7 @@ import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
 
-const memory = Memory.open();
+let memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
@@ -260,10 +260,34 @@ async function knownLabel(intent, url, title, cfg, surface) {
       )
         return { label: "related", confidence: look.confidence, source: "look" };
     }
-  // The model judges URL and title here, the same for a chat and its page: no second call.
   const own = await st.getCached(key);
-  const cached = cacheUsable(own, now) ? own : await st.getCached(relevanceKey(intent.id, url, title));
-  return cacheUsable(cached, now) ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
+  const usable = ({ label, confidence }) => ({ label, confidence, source: "cache" });
+  if (cacheUsable(own, now)) return usable(own);
+  if (surface?.kind !== "conversation") return {};
+  // A chat the notes say something about gets its own judgment. Otherwise the model
+  // would see only URL and title, the same as for the page: no second call.
+  if ((await notesFor(url, title, surface)).length) return {};
+  const page = await st.getCached(relevanceKey(intent.id, url, title));
+  return cacheUsable(page, now) ? usable(page) : {};
+}
+
+// The person's own notes about this page or this person, from memory's search. Entries
+// whole, short by nature; a plain note can run to hundreds of thousands of characters,
+// so it is capped. The goal stays out of the query: a page nothing is known about keeps
+// the plain prompt.
+const NOTES_MAX = 5;
+const NOTE_CHARS = 1500;
+async function notesFor(url, title, surface) {
+  const query = [title, hostOf(url), surface?.labels?.[0]].filter(Boolean).join(" ");
+  const hits = await (await memory).recall(query, { limit: NOTES_MAX }).catch(() => []);
+  return hits.map(({ title: noteTitle, item }) => ({
+    topic: item.topic ?? "notes",
+    title: noteTitle,
+    text: (
+      item.text?.slice(0, NOTE_CHARS) ??
+      [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ")
+    ).replace(/\s+/g, " "),
+  }));
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => sense(() => chrome.tabs.get(tabId)));
@@ -312,6 +336,8 @@ async function judge(need) {
       title: need.title,
       examples,
       profile: await (await memory).profile().catch(() => null),
+      notes: await notesFor(need.url, need.title, need.surface),
+      conversationWith: need.surface?.labels?.[0],
     });
   } catch (err) {
     // No model set up: the page stays neutral.
@@ -436,7 +462,15 @@ async function judgeExcerpt(need, from) {
     return { skipped: "no model" };
   }
   const profile = await (await memory).profile().catch(() => null);
-  const r = await classifyRelevance(complete, { intent, url: need.url, title: need.title, profile, excerpt: text });
+  const r = await classifyRelevance(complete, {
+    intent,
+    url: need.url,
+    title: need.title,
+    profile,
+    excerpt: text,
+    notes: await notesFor(need.url, need.title, need.surface),
+    conversationWith: need.surface?.labels?.[0],
+  });
   await log({
     type: "llm",
     ts: Date.now(),
@@ -809,10 +843,21 @@ const HANDLERS = {
   maintain,
   "sync-brain": async () => {
     const r = await (await memory).syncBrain();
-    if (r.connected && !r.needsPermission) refreshProfile().catch(() => {});
+    if (r.connected && !r.needsPermission) {
+      await (await store).clearCached();
+      refreshProfile().catch(() => {});
+    }
     return r;
   },
   "refresh-profile": refreshProfile,
+  // An import ran in the settings page, on its own Memory: search the new notes here, and
+  // judge again what was judged without them.
+  "memory-changed": async () => {
+    memory = Memory.open();
+    await (await store).clearCached();
+    await feed({ type: "session", ts: Date.now(), kind: "memory" });
+    return sense(activeTab);
+  },
   "get-profile": async () => ({
     profile: await (await memory).profile(),
     queue: await (await memory).taskQueue({ today: localDate() }),

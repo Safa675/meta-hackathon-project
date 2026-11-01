@@ -31,11 +31,17 @@ export function normalizeTitle(title = "") {
 // surface: where on the page the person works (background/page.js readRegion), or nothing.
 const inConversation = (surface) => surface?.kind === "conversation";
 
+// "conversation|ali demir": what is known of one person says nothing of another.
+function conversationPart(surface) {
+  const name = normalizeTitle(surface.labels?.[0] ?? "");
+  return name ? `conversation|${name}` : "conversation";
+}
+
 // Cache key: one judgment per goal and page. One URL and title can hold a chat and a
-// feed, so a conversation has its own. The name stays out: it is one surface.
+// feed, so a conversation has its own, per person.
 export function relevanceKey(intentId, url, title, surface) {
   const page = `${intentId}|${hostOf(url)}|${normalizeTitle(title)}`;
-  return inConversation(surface) ? `${page}|conversation` : page;
+  return inConversation(surface) ? `${page}|${conversationPart(surface)}` : page;
 }
 
 // User labels, most specific first. On sites where one host holds work and
@@ -46,7 +52,7 @@ export function labelKeys(topic, url, title, surface) {
   const page = TITLE_SENSITIVE.includes(host)
     ? [`${topic}|${host}|${normalizeTitle(title)}`, `${topic}|${host}`]
     : [`${topic}|${host}`];
-  return inConversation(surface) ? [`${topic}|${host}|conversation`, ...page] : page;
+  return inConversation(surface) ? [`${topic}|${host}|${conversationPart(surface)}`, ...page] : page;
 }
 
 // "This is for my task". A title label (TITLE_SENSITIVE hosts) lasts. A whole-site or
