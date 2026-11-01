@@ -22,7 +22,8 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `brain.js` | Reads a brain checkout: `inbox/`, `notes/log/`, other notes; open loops |
 | `consolidate.js` | Inbox → log: validate, redact secret-shaped strings, drop unchanged restatements, id |
 | `recall.js` | In-memory BM25 over entries and notes. İ/I/ı/i fold to one letter; diacritics stripped; URL debris ignored. `topicSearch` boosts topics the tab names or the stated intent belongs to; nothing is excluded |
-| `context.js` | Context pack: latest intent, open loops and notes related to the current tab, rendered for a prompt |
+| `context.js` | Context pack: latest intent, open loops and notes related to the current tab, rendered for a prompt; the task queue |
+| `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
 | `model.js` | OpenAI-compatible client; provider presets; settings storage |
@@ -48,6 +49,10 @@ await memory.consolidate();                     // { accepted, duplicates, rejec
 await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
 await memory.latestIntent();                    // newest todo
+await memory.taskQueue({ today, limit, staleAfter }); // open loops by time left; each has due and daysLeft
+await memory.profileSample({ limit });         // newest entries as { topic, title, next }, for the profile call
+await memory.profile();                        // { summary, topics, workHosts }, or null before the first read
+await memory.setProfile(profile);              // stored in IndexedDB meta
 const { pack, prompt } = await memory.contextPack({ title, url });
 
 // Activity: call on tab activation, URL/title change, and window blur / chrome.idle
@@ -65,7 +70,39 @@ await memory.maintain();
 import { redact } from "../memory/index.js";
 ```
 
-Entry fields follow the second-brain record: `kind` (`decision|fact|preference|event|lesson|todo`), `topic` (slug), `title` (3-120 chars), `date`, `source`, `context`, `result`, `evidence`, `next`.
+## Entry format
+
+One format for everything. An entry is the second-brain record (`Date · Context · Decision/Result · Evidence · Next action`), and it is the canonical form: other sources (a plain notes folder, what an assistant remembers, an export) are mapped into it, and nothing downstream reads a second form.
+
+| Field | Rule |
+|---|---|
+| `kind` | `decision`, `fact`, `preference`, `event`, `lesson` or `todo` |
+| `topic` | a slug: `a-z`, `0-9`, `-` |
+| `title` | 3-120 characters |
+| `date` | `YYYY-MM-DD`; today when omitted |
+| `source` | where it came from; `extension` for entries made here |
+| `context`, `result` | required |
+| `evidence`, `next` | stored as `none` when empty |
+
+`validate()` in `entry.js` is the source of truth.
+
+**Files.** An inbox entry is Markdown: frontmatter (`kind`, `topic`, `title`, `date`, `source`, `host`) and a body of `Context:`, `Decision/Result:`, `Evidence:` and `Next action:` lines. An entry under `notes/log/` carries the same fields as `- **Context:** …` bullets, plus an `id`. Only `inbox/` and `notes/` are read, and `inbox/_done/` and `inbox/README.md` are skipped. Any other `.md` under `notes/` is a document, `{ path, title, text }`: searchable, and never an open loop. An entry is small and a document is not. In one real brain of 1,498 entries, an entry's text has a median of about 1,000 characters and a largest of 1,908, while the 120 documents have a median of about 3,600, a 95th percentile of about 45,000 and a largest of about 390,000. A caller that passes documents to a model must cap them; entries can go uncut.
+
+**Open loop.** An entry whose `next` is anything but `none`. That is the whole test. Nothing in the brain marks a loop done.
+
+**Deadlines.** There is no due field, on purpose: `brain consolidate` rewrites an entry's frontmatter with a fixed set of keys, so a `due:` written here would be dropped on the next nightly run. `due.js` derives the date from the text instead, so notes written before Tuck existed already carry one.
+
+- It looks in `next`, `result`, `title` and `context`, for an ISO date (`2026-11-09`).
+- A date counts only with a cue beside it: `due`, `deadline`, `closes`, `expires`, `last day`, `son başvuru`, `son tarih` or `teslim`, up to 32 characters before the date or 16 after. A cue never reaches across another date, so in "runs 2026-11-13 to 2027-01-05; deadline is 2026-12-01" only the last date is a deadline.
+- A date earlier than the entry's own date is ignored, and the earliest remaining date wins.
+- No cue, no deadline. A deadline read wrongly is worse than none.
+- Dates in plain words ("closes today") are not parsed.
+
+**Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
+
+**Ids.** An entry read from `notes/log/` keeps the `id` in its file. Every other entry gets `entryId()`: a hash of its date, topic and title plus its title, context, result, evidence and next. The same entry gets the same id on every import, and editing any of those fields gives it a new one. Whether an inbox entry keeps its id once the brain's own `consolidate` has filed it is not verified.
+
+**Profile.** `profile()` is what `src/agent/profile.js` read from the newest entries (`profileSample()`): a short summary, the topics that are the person's work, and the sites that are. It is stored in IndexedDB `meta` and read from there on every call, so unlike the entries it is never stale.
 
 ## Model
 
@@ -73,8 +110,8 @@ Entry fields follow the second-brain record: `kind` (`decision|fact|preference|e
 
 | Preset | Model | Note |
 |---|---|---|
-| `meta-contributor` (default) | `muse-spark-1.3-contributor` on Meta's Model API | Cheapest; Meta may train on inputs and outputs; offered only in some countries |
-| `meta` | `muse-spark-1.3` on Meta's Model API | Standard price, not used for training |
+| `meta` (default) | `muse-spark-1.3` on Meta's Model API | Standard price, not used for training |
+| `meta-contributor` | `muse-spark-1.3-contributor` on Meta's Model API | Not offered in settings. It still resolves so settings saved earlier load, and `privateSettings()` swaps it for `meta` on every call that carries notes: Meta may train on what Contributor is sent |
 | `openrouter` | `meta/muse-glimmer-30b` | Muse Glimmer is not served on Meta's Model API |
 | `ollama` | `muse-glimmer` on `localhost:11434` | Local; no key. Ollama must allow the extension origin (`OLLAMA_ORIGINS`) |
 | `together`, `fireworks`, `baseten`, `groq`, `nebius` | Muse Spark Open | The hosts Meta's deploy docs list; not on Meta's Model API |
@@ -87,3 +124,4 @@ Live check: `npm run test:live` (one ping and one distill), with `MODEL_API_KEY`
 - A brain folder chosen with the real folder picker: tests use an origin-private folder. Whether Chrome asks again for permission after a restart is unknown; `syncBrain()` reports `needsPermission` when it does.
 - Distill against a real model (the live script exists; it needs a key).
 - Embeddings: recall is keyword-only.
+- Known bug: a second `Memory` instance (the background worker) keeps its cached entries and index after an import made by another one (the options page), so `taskQueue`, `openLoops` and `recall` read stale data there (#18).
