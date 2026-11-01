@@ -26,7 +26,7 @@ import { buildProfile } from "../agent/profile.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
-import { watchTyping, isComposing, readExcerpt } from "./page.js";
+import { watchTyping, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
 
 const memory = Memory.open();
@@ -220,9 +220,21 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
     title,
     key: relevanceKey(s.intent?.id ?? "none", url, title),
     audible: !!tab.audible,
+    surface: await surfaceOf(tab.id, url, flags),
     ...flags,
     ...(await knownLabel(s.intent, url, title, cfg)),
   });
+}
+
+// Where on the page the person is working. Logged raw on the context input, so a replay
+// sees it. Runs inside the engine's queue, so a page that does not answer (loading,
+// frozen) must not hold it up: it then counts as a page.
+const PLAIN_PAGE = { kind: "page", labels: [] };
+const REGION_WAIT_MS = 500;
+async function surfaceOf(tabId, url, { browserFocused }) {
+  if (!url || !browserFocused || !mayRead(url, await readingNow())) return PLAIN_PAGE;
+  const region = await Promise.race([inPage(tabId, readRegion), sleep(REGION_WAIT_MS)]);
+  return region ?? PLAIN_PAGE;
 }
 
 // Built-in rules, then the user's labels, then a recent second look that found work,
@@ -560,6 +572,7 @@ async function presence(prev, s, input) {
   const away = ["break", "paused"].includes(s.state);
   // Typing is noted from the start of the page (its time only), for the second look.
   if (s.intent && !away) await inPage(input.tabId, watchTyping);
+  if (s.intent && !away) await inPage(input.tabId, watchRegion);
   if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
   else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
 }

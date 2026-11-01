@@ -33,6 +33,57 @@ export function isComposing(recentMs) {
   return field && Date.now() - (window.__tuckTyping?.last ?? 0) < recentMs;
 }
 
+// Notes the conversation the person last touched: a dialog holding a text box, or the
+// main area on a messaging URL (a comment box on a feed is not a conversation). Touching
+// anything else ends it, so a chat left open does not speak for the feed, and neither
+// does the focus, which stays in the chat's box while the feed scrolls. Keeps the element
+// only: no text is read here. composedPath and nodeType, because chats live in shadow
+// roots (LinkedIn's does): event.target is the host there. Installs once per page.
+export function watchRegion() {
+  if (window.__tuckRegion) return true;
+  window.__tuckRegion = { el: null };
+  const BOX = '[role="textbox"], [contenteditable="true"], [contenteditable=""], textarea';
+  const touched = (event) => {
+    const path = event.composedPath().filter((n) => n.nodeType === 1);
+    if (path.some((el) => el.id === "tuck-companion")) return; // Tuck's own bubble says nothing
+    const messaging = /messag|chat|inbox|thread/i.test(location.pathname);
+    let found = null;
+    for (const el of path) {
+      if (el === document.body) break;
+      const chat = el.getAttribute("role") === "dialog" || (messaging && el.tagName === "MAIN");
+      if (chat && el.querySelector(BOX)) {
+        found = el;
+        break;
+      }
+    }
+    if (found === window.__tuckRegion.el) return;
+    window.__tuckRegion.el = found;
+    try {
+      chrome.runtime.sendMessage({ type: "record-active" }).catch(() => {});
+    } catch {} // the extension was reloaded
+  };
+  for (const type of ["pointerdown", "wheel", "keydown"])
+    addEventListener(type, touched, { capture: true, passive: true });
+  return true;
+}
+
+// Where the person is working: { kind: "conversation", labels: [heading] } or
+// { kind: "page", labels: [] }. The heading nearest the text box is the only text read
+// (LinkedIn's own labels carry message text). Read fresh, so a closed chat is a page and
+// an opened thread has its own name.
+export function readRegion() {
+  const page = { kind: "page", labels: [] };
+  const el = window.__tuckRegion?.el;
+  if (!el?.isConnected) return page;
+  const box = el.querySelector('[role="textbox"], [contenteditable="true"], [contenteditable=""], textarea');
+  if (!box) return page;
+  for (let n = box.parentElement; n; n = n === el ? null : n.parentElement) {
+    const text = n.querySelector('h1, h2, h3, h4, [role="heading"]')?.innerText?.trim();
+    if (text) return { kind: "conversation", labels: [text.replace(/\s+/g, " ").slice(0, 80)] };
+  }
+  return { kind: "conversation", labels: [] };
+}
+
 // A short excerpt of the visible page: the text around the focused field when
 // fromFocus (the person is typing there), else around the middle of the window. Never
 // reads form values or drafts, and reads nothing when a password field is visible,

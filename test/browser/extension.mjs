@@ -67,6 +67,25 @@ const server = http.createServer((req, res) => {
           `<p>Me: will do, then the demo of the checkout flow.</p>` +
           `<p>Ali: perfect, and add a note on the zero quantity edge case in the description.</p>${reply}</aside>`,
       );
+  // A chat in an open shadow root, docked over a page with a comment box (LinkedIn's layout).
+  if (req.url === "/docked")
+    return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+      `<title>Workspace</title><main style="height:3000px"><h1>Feed</h1><p id="post">A post.</p>` +
+        `<textarea id="comment"></textarea></main><div id="outlet" style="position:fixed;bottom:0;right:0"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div id="docked-chat" role="dialog" aria-label="Messaging"><h2>Ali Demir</h2>' +
+            '<p aria-label="Options for the message from Ali: secret plan">secret plan</p>' +
+            '<div id="docked-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
+        </script>`,
+    );
+  // The full messaging page: no dialog, the box is in the main area.
+  if (req.url === "/messaging/thread/1")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Messaging</title><main><section><h2>Ali Demir</h2>` +
+          `<div id="thread-box" role="textbox" contenteditable="true" style="height:40px"></div></section></main>`,
+      );
   if (req.url === "/login")
     return res
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
@@ -108,6 +127,8 @@ const chat = `http://localhost:${port}/chat`;
 const compose = `http://localhost:${port}/compose`;
 const side = `http://localhost:${port}/side`;
 const login = `http://localhost:${port}/login`;
+const docked = `http://localhost:${port}/docked`;
+const thread = `http://localhost:${port}/messaging/thread/1`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -313,6 +334,47 @@ await loginTab.goto(login);
 await loginTab.bringToFront();
 const drift8 = await waitForNewDrift(driftSide.id);
 
+// Where the person works on the page (issue #9): the conversation last touched, by its
+// heading. Each answer is read from the exported log, the input a replay sees.
+const surfaceAt = async (url, wanted) => {
+  for (let i = 0; i < 40; i++) {
+    await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+    const { events } = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
+    const surface = events.filter((e) => e.type === "context" && e.url === url).at(-1)?.surface;
+    if (surface?.kind === wanted) return surface;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no ${wanted} surface on ${url}`);
+};
+const dockedTab = await ctx.newPage();
+await dockedTab.goto(docked);
+await dockedTab.bringToFront();
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+const dockedStart = await surfaceAt(docked, "page");
+await dockedTab.click("#docked-box");
+const dockedChat = await surfaceAt(docked, "conversation");
+// The feed scrolls under the chat: the focus stays in the box, the person does not.
+await dockedTab.mouse.move(40, 200);
+await dockedTab.mouse.wheel(0, 200);
+const dockedFeed = await surfaceAt(docked, "page");
+const focusStayed = await dockedTab.evaluate(
+  () => document.getElementById("outlet").shadowRoot.activeElement?.id === "docked-box",
+);
+await dockedTab.click("#docked-box");
+await surfaceAt(docked, "conversation");
+await dockedTab.click("#comment");
+const dockedComment = await surfaceAt(docked, "page");
+// A chat touched and then closed is a page again.
+await dockedTab.click("#docked-box");
+await surfaceAt(docked, "conversation");
+await dockedTab.evaluate(() => document.getElementById("outlet").shadowRoot.getElementById("docked-chat").remove());
+const dockedClosed = await surfaceAt(docked, "page");
+await dockedTab.goto(thread);
+await dockedTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await dockedTab.click("#thread-box");
+const threadChat = await surfaceAt(thread, "conversation");
+await dockedTab.close();
+
 // Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
 // nothing is read: the chat page is a drift again.
 await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
@@ -402,6 +464,21 @@ assert.ok(typedLook, "with typing, the chat around the box was read");
 assert.doesNotMatch(typedLook.at(-1).content, /Five lessons/, "the chat, not the whole page");
 assert.ok(!sideLooks.some((m) => /on it/.test(m.at(-1).content.split("Page excerpt:")[1] ?? "")), "not the draft");
 assert.equal(drift8.evidence.url, login);
+assert.deepEqual(dockedStart, { kind: "page", labels: [] }, "a chat merely open is not where the person works");
+assert.deepEqual(
+  dockedChat,
+  { kind: "conversation", labels: ["Ali Demir"] },
+  "the chat in a shadow root, by its heading",
+);
+assert.deepEqual(dockedFeed, { kind: "page", labels: [] }, "scrolling the feed ends the conversation");
+assert.equal(focusStayed, true, "with the focus still in the chat's box");
+assert.deepEqual(dockedComment, { kind: "page", labels: [] }, "a comment box on a feed is not a conversation");
+assert.deepEqual(dockedClosed, { kind: "page", labels: [] }, "a closed chat is a page");
+assert.deepEqual(threadChat, { kind: "conversation", labels: ["Ali Demir"] }, "the full messaging page");
+assert.ok(
+  !log.events.some((e) => JSON.stringify(e.surface ?? "").includes("secret plan")),
+  "only the heading is read, not message text in labels",
+);
 assert.equal(driftOff.evidence.url, chat, "with reading off, a cached verdict does not count");
 assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "settings"),

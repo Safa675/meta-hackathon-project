@@ -6,6 +6,9 @@
 
 ## Decided
 
+**Tuck notes which conversation the person last touched, by its heading, not only before a nudge (2026-11-01, issue #9).**
+Notes should decide what a page means: a conversation with someone the person works with is work, and the feed on the same URL is not. That needs the name, immediately and with no model call, and opening a chat fires no Chrome event. So a listener notes the last container touched (a dialog with a text box, or the main area on a messaging URL); touching anything else ends it, because the focus stays in the chat's box while the feed scrolls (seen on real LinkedIn). Only the heading is read, since LinkedIn's labels hold message text. It stays on this device, in the event log, and never runs on never-read sites or with reading off.
+
 **Before a drift word, Tuck looks at the page again: typing, then a short excerpt (2026-11-01, issue #5).**
 URL and title cannot tell a work chat from a feed on the same site: Safa was nudged while messaging a teammate about this project in LinkedIn's chat window. Typing is a yes/no checked before every drift word: focus in a text field and a key pressed in the last minute (only that time is noted). The excerpt is read a little ahead because it takes a model call: up to 1,000 characters from where the person types, else from the middle of the window. It is redacted, sent to a model that does not train on it, and only the verdict is kept. It rules out screenshots and site-specific scraping, and it never runs on pages with a password field or on the never-read sites.
 
