@@ -21,6 +21,7 @@ export class Memory {
   #db;
   #index = null;
   #entries = [];
+  #stamp;
 
   static async open(name) {
     const m = new Memory();
@@ -28,15 +29,38 @@ export class Memory {
     return m;
   }
 
+  // The entries and the search index are cached, and the options page and the
+  // background worker each hold their own Memory over one database. Every write stores
+  // a fresh stamp in `meta`; a read reloads when the stored stamp is not the one its
+  // copy was loaded under, so a write made by the other instance is seen on the next
+  // read, with no message between them. The stamp is random rather than a counter:
+  // two writers that read the same counter would store the same next value, and a
+  // reader that loaded between their writes would never see the second.
   async #load() {
-    if (this.#index) return;
+    const stamp = await db.getMeta(this.#db, "version");
+    if (this.#index && stamp === this.#stamp) return;
+    this.#stamp = stamp;
     this.#entries = await db.getAll(this.#db, "entries");
     const notes = await db.getAll(this.#db, "notes");
     this.#index = buildIndex([...this.#entries.map(entryDoc), ...notes.map(noteDoc)]);
   }
 
-  #dirty() {
+  async #dirty() {
     this.#index = null;
+    await db.setMeta(this.#db, "version", crypto.randomUUID());
+  }
+
+  // Drop the local copy so the next read reloads it. Reads already notice a write made
+  // by another instance; this is for a caller that wants to say so explicitly.
+  refresh() {
+    this.#index = null;
+  }
+
+  // The stamp of the last write by any instance. A caller that caches something
+  // derived from memory (a model's decisions about pages) can compare it to know when
+  // to clear that cache.
+  async version() {
+    return db.getMeta(this.#db, "version");
   }
 
   // ---- Brain -------------------------------------------------------------
@@ -54,7 +78,7 @@ export class Memory {
       ...entries.map((e) => ({ ...e, id: e.id ?? entryId(e), status: e.path.startsWith("inbox/") ? "inbox" : "log" })),
     ]);
     await db.putAll(this.#db, "notes", documents);
-    this.#dirty();
+    await this.#dirty();
     return { entries: entries.length, notes: documents.length, skipped };
   }
 
@@ -111,7 +135,7 @@ export class Memory {
     const entry = makeEntry({ source: "extension", ...fields });
     const stored = { ...entry, id: entryId(entry), status: "inbox", ts: Date.now() };
     await db.putAll(this.#db, "entries", [stored]);
-    this.#dirty();
+    await this.#dirty();
     return stored;
   }
 
@@ -131,7 +155,7 @@ export class Memory {
       ...result.accepted.map((e) => ({ ...e, ts: e.ts ?? Date.now() })),
       ...flagged,
     ]);
-    this.#dirty();
+    await this.#dirty();
     return {
       accepted: result.accepted.length,
       duplicates: result.duplicates.length,
@@ -194,7 +218,7 @@ export class Memory {
     const todo = this.#entries.find((e) => e.id === id);
     if (!todo) throw new Error(`no entry ${id}`);
     await db.putAll(this.#db, "entries", [{ ...todo, done: true }]);
-    this.#dirty();
+    await this.#dirty();
     return this.add({
       kind: "event",
       topic: todo.topic,
