@@ -134,7 +134,7 @@ async function readProfile() {
 
 async function showProfile(note) {
   const profile = await memory.profile();
-  const queue = await memory.taskQueue({ today: localDate(), limit: 5 });
+  const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
     note,
     profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",

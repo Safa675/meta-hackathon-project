@@ -8,6 +8,7 @@ import { withOverrides } from "../attention/config.js";
 import {
   hostOf,
   notesAbout,
+  notWorkKey,
   relevanceKey,
   labelKeys,
   builtinLabel,
@@ -42,7 +43,7 @@ const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekda
 // The tasks close enough for Tuck to name out loud (attention/reminders.js). Anything else
 // never reaches the prompt, so it cannot be nagged about.
 async function dueSoon({ limit = 2 } = {}) {
-  const queue = await (await memory).taskQueue({ today: localDate(), limit: 10 }).catch(() => []);
+  const queue = await (await memory).taskQueue({ today: localDate(), limit: Infinity }).catch(() => []);
   return sayable(queue, await loadLoops(), localDate())
     .slice(0, limit)
     .map((e) => ({ title: e.title, when: dueLabel(e.daysLeft) }));
@@ -249,15 +250,14 @@ async function knownLabel(intent, url, title, cfg, surface) {
   if (!intent) return {};
   const st = await store;
   const now = Date.now();
-  const keys = labelKeys(intent.topic, url, title, surface);
-  let notWork = false;
-  for (const key of keys) {
-    const l = await st.getLabel(key);
-    if (!labelHolds(l, now)) continue;
-    if (l.label !== "unrelated") return { label: l.label, confidence: 1, source: "label" };
-    // "Not work" is about that page: it does not speak for a conversation on it.
-    if (key === keys[0]) notWork = true;
-  }
+  // The most specific answer wins: a no about this page or chat beats a yes about the site.
+  const no = await st.getLabel(notWorkKey(intent.topic, url, title, surface));
+  const notWork = no?.label === "unrelated" && labelHolds(no, now);
+  if (!notWork)
+    for (const key of labelKeys(intent.topic, url, title, surface)) {
+      const l = await st.getLabel(key);
+      if (l?.label === "related" && labelHolds(l, now)) return { label: l.label, confidence: 1, source: "label" };
+    }
   const key = relevanceKey(intent.id, url, title, surface);
   if (mayRead(url, await readingNow()))
     for (const from of ["focus", "view"]) {
@@ -543,21 +543,27 @@ async function showTrigger(t, s) {
 // once it is on screen. Returns whether Tuck was shown.
 async function showWithReminder(tabId, view, goalTitle) {
   const today = localDate();
-  const loops = await loadLoops();
-  const queue = await (await memory).taskQueue({ today, limit: 10 }).catch(() => []);
-  const item = view?.bubble ? pickReminder(queue, { goalTitle, loops, today }) : null;
+  const { mode } = await loadEngine();
+  const quiet = mode === "dnd" || mode === "off";
+  const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
+  const item = view?.bubble && !quiet ? pickReminder(queue, { goalTitle, loops: await loadLoops(), today }) : null;
   if (!item) return showTuck(tabId, view);
   const reminder = { id: item.id, title: item.title, line: reminderLine(dueLabel(item.daysLeft)) };
   const shown = await showTuck(tabId, { ...view, bubble: { ...view.bubble, reminder } });
-  if (shown) await saveLoops(markSaid(loops, item.id, today));
+  if (shown) {
+    // Read again: showing Tuck takes a while, and a Done may have come in meanwhile.
+    await saveLoops(markSaid(await loadLoops(), item.id, today));
+    await log({ type: "feedback", ts: Date.now(), kind: "reminder_said", payload: { id: item.id } });
+  }
   return shown;
 }
 
 // On it: nothing more today, already noted when it was said. Done stays done. Switch:
 // it becomes the goal.
 async function reminderAnswer({ id, title, choice }, sender) {
+  await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   if (choice === "done") await saveLoops(markDone(await loadLoops(), id, Date.now()));
-  if (choice === "switch") return setIntent({ title, from: "tuck" }, sender);
+  if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
   return { ok: true };
 }
 
@@ -673,9 +679,11 @@ async function greet(tabId) {
   // push a long title past the 120-character limit an entry validates against.
   const loops = [
     ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
-    ...stillOpen(await (await memory).taskQueue({ today: localDate() }), await loadLoops()).map((e) => ({
-      title: e.title,
-    })),
+    ...stillOpen(await (await memory).taskQueue({ today: localDate(), limit: Infinity }), await loadLoops()).map(
+      (e) => ({
+        title: e.title,
+      }),
+    ),
   ];
   const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
   const shown = await showWithReminder(tabId, view, expired?.expiredAt && !expired.doneAt ? expired.title : null);
@@ -687,9 +695,19 @@ async function respond({ choice }) {
     const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
     const ts = Date.now();
     const before = await engineState(await config(), ts);
-    // Nowhere to go back to yet: leave the nudge open (the popup disables the button).
-    if (choice === "back" && !before.lastRelevant) return { ok: false, reason: "no related page yet" };
     const page = lastTrigger?.evidence; // the page the nudge was about
+    // "No, take me back" answers the question Tuck asked on a page it was unsure about,
+    // which only the first drift word does. Any other "back" just means going back.
+    const saidNo =
+      choice === "back" &&
+      lastTrigger?.kind === "drift" &&
+      lastTrigger.level === 1 &&
+      page?.unsure &&
+      page.host &&
+      before.intent;
+    // Nowhere to go back to yet: leave the nudge open (the popup disables the button). A no
+    // is still an answer.
+    if (choice === "back" && !before.lastRelevant && !saidNo) return { ok: false, reason: "no related page yet" };
     const s = await process({
       type: "response",
       ts,
@@ -704,11 +722,9 @@ async function respond({ choice }) {
     if (choice === "related") await showTuck(before.current?.tabId, present({ event: "resolved" }));
     else if (choice === "break") await hideTuck();
     else await restTuck();
-    if (choice === "back") await takeMeBack(s.lastRelevant);
+    if (choice === "back" && s.lastRelevant) await takeMeBack(s.lastRelevant);
     if (choice === "related" && page?.host && before.intent) await markLabel(page, before.intent, ts);
-    // "No, take me back" answers the question Tuck asked on a page it was unsure about.
-    if (choice === "back" && page?.unsure && page?.host && before.intent)
-      await markLabel(page, before.intent, ts, "unrelated");
+    if (saidNo) await markLabel(page, before.intent, ts, "unrelated");
     return { ok: true };
   });
 }
@@ -747,7 +763,8 @@ async function takeMeBack(last) {
 async function markLabel(page, intent, ts, verdict = "related") {
   const cfg = await config();
   const st = await store;
-  const key = labelKeys(intent.topic, page.url, page.title, page.surface)[0];
+  const noKey = notWorkKey(intent.topic, page.url, page.title, page.surface);
+  const key = verdict === "unrelated" ? noKey : labelKeys(intent.topic, page.url, page.title, page.surface)[0];
   const prev = await st.getLabel(key);
   const chat = page.surface?.kind === "conversation";
   const label = nextLabel(
@@ -768,7 +785,8 @@ async function markLabel(page, intent, ts, verdict = "related") {
   await st.putLabel(chat ? { ...label, who: page.surface.labels?.[0] } : label);
   await log({ type: "feedback", ts, kind: "label", payload: label });
   if (verdict !== "related") return;
-  const lastedBefore = prev?.days && prev.until == null;
+  if (key !== noKey) await st.deleteLabel(noKey); // a yes takes back an earlier no
+  const lastedBefore = prev?.label === "related" && prev.days && prev.until == null;
   if (label.until != null || lastedBefore) return;
   await (
     await memory
@@ -811,13 +829,16 @@ async function refreshProfile() {
 
 // ---- Goals and modes -----------------------------------------------------
 
-async function setIntent({ title, next, from }, sender) {
+async function setIntent({ title, next, from, fromLoopId }, sender) {
   return enqueue(async () => {
     const st = await store;
     const previous = await st.activeIntent();
     if (previous) await st.putIntent({ ...previous, doneAt: Date.now(), replaced: true });
     const entry = await (await memory).setIntent({ title, next: next || undefined });
-    const intent = makeIntent({ title, steps: next ? [next] : [], memoryEntryId: entry.id }, Date.now());
+    const intent = {
+      ...makeIntent({ title, steps: next ? [next] : [], memoryEntryId: entry.id }, Date.now()),
+      ...(fromLoopId && { fromLoopId }), // finishing this goal finishes that task
+    };
     await (await store).putIntent(intent);
     await process({
       type: "session",
@@ -838,6 +859,7 @@ async function completeIntent() {
     if (!intent) return null;
     if (intent.memoryEntryId) await (await memory).completeIntent(intent.memoryEntryId).catch(() => {});
     await st.putIntent({ ...intent, doneAt: Date.now() });
+    if (intent.fromLoopId) await saveLoops(markDone(await loadLoops(), intent.fromLoopId, Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
     // Tuck asks what's next, on the page in front.
     await showWithReminder((await loadEngine()).current?.tabId, present({ event: "goal_done" }), intent.title);

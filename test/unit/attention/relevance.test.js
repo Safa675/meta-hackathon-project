@@ -12,6 +12,7 @@ import {
   nextLabel,
   labelHolds,
   notesAbout,
+  notWorkKey,
 } from "../../../src/attention/relevance.js";
 
 test("normalizeTitle drops notification counters, extra spaces and case", () => {
@@ -252,4 +253,12 @@ test("a no to Tuck's question lasts at once; a later yes replaces it and starts 
   assert.equal(yes.label, "related");
   assert.deepEqual(yes.days, ["d1"]);
   assert.ok(yes.until != null, "one yes after a no is for this visit");
+});
+
+test("a no is about that page or that chat, never the whole site", () => {
+  const url = "https://github.com/acme/other";
+  assert.equal(notWorkKey("shop", url, "Other repo"), "shop|github.com|other repo");
+  assert.notEqual(notWorkKey("shop", url, "Other repo"), notWorkKey("shop", url, "cart.js · acme/shop"));
+  assert.ok(!labelKeys("shop", url, "cart.js").includes(notWorkKey("shop", url, "Other repo")));
+  assert.equal(notWorkKey("shop", url, "x", CHAT), "shop|github.com|conversation|ali");
 });

@@ -7,7 +7,7 @@
 ## Decided
 
 **"Take me back" teaches only as the answer to Tuck's question; labels can be forgotten in settings (2026-11-01, issue #8).**
-Counting every "Take me back" was the plan, but the button only appears on a page already judged unrelated, so it adds little, and a page wrongly marked as work never gets a nudge to answer. So a no on a page Tuck was unsure about is remembered at once, and settings list what was learned. A later yes replaces the no, and it does not speak for a conversation on that page.
+Counting every "Take me back" was the plan, but the button only appears on a page already judged unrelated, so it adds little, and a page wrongly marked as work never gets a nudge to answer. So a no on a page Tuck was unsure about is remembered at once, for that page's title or that conversation, never the whole site: a repo on the same host can be the work. Settings list what was learned. A later yes takes the no back. Forgetting a label does not remove a preference already written to memory, since a lasting label writes one and `src/memory/` has no way to remove it yet.
 
 **Reminders name what is due at moments that already exist, in a fixed line (2026-11-01, issue #10).**
 Urgency changes what Tuck says, never how often it interrupts: a greeting, a return, a break's end and a finished goal, once per task per day. The notes have no way to mark a task done, so "done" is kept in the extension by entry id. A line a template can write needs no model call.
