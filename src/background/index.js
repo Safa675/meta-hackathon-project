@@ -29,7 +29,7 @@ import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
 
-let memory = Memory.open();
+const memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
@@ -850,10 +850,9 @@ const HANDLERS = {
     return r;
   },
   "refresh-profile": refreshProfile,
-  // An import ran in the settings page, on its own Memory: search the new notes here, and
-  // judge again what was judged without them.
+  // An import ran in the settings page. Memory's own reads notice it; what was judged
+  // without the new notes is judged again.
   "memory-changed": async () => {
-    memory = Memory.open();
     await (await store).clearCached();
     await feed({ type: "session", ts: Date.now(), kind: "memory" });
     return sense(activeTab);

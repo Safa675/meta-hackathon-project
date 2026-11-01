@@ -48,7 +48,7 @@ At a natural moment -> pickReminder (pure) -> line + three answers
 - **Surface in keys and labels:** `relevanceKey`, `labelKeys` (`src/attention/relevance.js`), per person. A page's label covers its conversations, never the other way. A conversation is no return point. Done (step 2).
 - **`notesFor`** in `src/background/index.js`: `memory.recall`, 5 hits. Entries whole; plain notes capped. The goal stays out of the query, so a page nothing is known about keeps the plain prompt. Goes through `privateSettings()` (`AGENTS.md` rule 5).
 - **`NOTES_RULE`** in `src/agent/relevance.js`: added to the system prompt only when notes were found.
-- **Memory changes:** the options page sends `memory-changed`. The worker opens a fresh `Memory`, clears the relevance cache, and feeds a `session` input of kind `memory`, so the page in front is judged again. When #18 lands, the fresh `Memory` is replaced by whichever fix it picks.
+- **Memory changes:** the options page sends `memory-changed`. The worker clears the relevance cache and feeds a `session` input of kind `memory`, so the page in front is judged again. Memory's own reads notice the import (#20).
 - **Two-way labels:** `nextLabel` and `labelHolds` gain `against` days. "Take me back" adds one. A label lasts once its side has `labelDays` different days and more days than the other.
 - **`pickReminder`:** new `src/attention/reminders.js`; state `loops` in `chrome.storage.local`, by entry id, so "done" survives a re-import; `doneAt` also filters `dueSoon`.
 - **`other_commitment`:** fourth label in `src/agent/relevance.js`, with a short list from `taskQueue()`.
