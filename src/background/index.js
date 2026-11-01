@@ -2,20 +2,31 @@
 // engine inputs, processed one at a time; engine state lives in
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
-import { Memory } from "../memory/index.js";
+import { Memory, redact } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
-import { hostOf, relevanceKey, labelKeys, builtinLabel, cacheUsable, isUnsure } from "../attention/relevance.js";
+import {
+  hostOf,
+  relevanceKey,
+  labelKeys,
+  builtinLabel,
+  cacheUsable,
+  isUnsure,
+  nextLabel,
+  labelHolds,
+} from "../attention/relevance.js";
+import { readingSettings, mayRead } from "../attention/reading.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
-import { makeIntent, isExpired } from "../attention/intents.js";
+import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
-import { classifyRelevance } from "../agent/relevance.js";
+import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
+import { watchTyping, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
 
 const memory = Memory.open();
@@ -123,6 +134,8 @@ async function apply(s, input, cfg) {
   await log(input); // ticks too: replay tells sleep from a long stay by them
   for (const o of r.out) {
     if (o.type === "need_relevance") askRelevance(o);
+    else if (o.type === "read_ahead") readAhead(o);
+    else if (o.type === "need_second_look") secondLook(o);
     else {
       await log(o);
       if (o.type === "trigger") await showTrigger(o, r.state);
@@ -208,19 +221,31 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
     key: relevanceKey(s.intent?.id ?? "none", url, title),
     audible: !!tab.audible,
     ...flags,
-    ...(await knownLabel(s.intent, url, title)),
+    ...(await knownLabel(s.intent, url, title, cfg)),
   });
 }
 
-// Built-in rules, then the user's labels, then the cache. Unknown → the engine asks.
-async function knownLabel(intent, url, title) {
+// Built-in rules, then the user's labels, then a recent second look that found work,
+// then the cache. Unknown → the engine asks.
+async function knownLabel(intent, url, title, cfg) {
   if (builtinLabel(url, OWN_PAGES)) return { label: "neutral", confidence: 1, source: "builtin" };
   if (!intent) return {};
   const st = await store;
+  const now = Date.now();
   for (const key of labelKeys(intent.topic, url, title)) {
     const l = await st.getLabel(key);
-    if (l) return { label: l.label, confidence: 1, source: "label" };
+    if (labelHolds(l, now)) return { label: l.label, confidence: 1, source: "label" };
   }
+  if (mayRead(url, await readingNow()))
+    for (const from of ["focus", "view"]) {
+      const look = await st.getCached(`look|${from}|${relevanceKey(intent.id, url, title)}`);
+      if (
+        look?.label === "related" &&
+        look.confidence >= cfg.unsureConfidence &&
+        now - look.ts < cfg.lookHoldMin * 60000
+      )
+        return { label: "related", confidence: look.confidence, source: "look" };
+    }
   const cached = await st.getCached(relevanceKey(intent.id, url, title));
   return cacheUsable(cached, Date.now()) ? { label: cached.label, confidence: cached.confidence, source: "cache" } : {};
 }
@@ -255,8 +280,9 @@ async function judge(need) {
   const settings = await loadModelSettings();
   const st = await store;
   const intent = (await st.activeIntent()) ?? s.intent;
+  // Only labels that still hold: a site marked as work for one visit is no example.
   const examples = (await st.recentLabels(20))
-    .filter((l) => l.topic === intent.topic)
+    .filter((l) => l.topic === intent.topic && labelHolds(l, Date.now()))
     .slice(0, 5)
     .map(({ host, title, label }) => ({ host, title, label }));
   let r;
@@ -293,6 +319,125 @@ async function judge(need) {
     latencyMs: r.latencyMs,
     intentId: s.intent.id,
   });
+}
+
+// ---- The second look -----------------------------------------------------
+
+const EXCERPT_CHARS = 1000; // at most this much page text leaves the device per look
+const EXCERPT_MIN_CHARS = 300; // climb from the focus until a container says this much
+const LOOK_WAIT_MS = 3000; // when a word is due, wait this long at most for the excerpt's verdict
+
+const readingNow = async () => readingSettings((await chrome.storage.local.get("pageReading")).pageReading);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// In the page: run one of page.js's functions; null where Chrome does not allow it.
+async function inPage(tabId, func, args = []) {
+  try {
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func, args });
+    return r?.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Is the person typing on the page in front (a key within cfg.typingRecentSec, focus
+// in a text field)? The excerpt then starts at that field; otherwise at the middle of
+// the window, so a chat box left focused does not speak for a scrolled feed.
+async function typingOn(tabId) {
+  await inPage(tabId, watchTyping);
+  return (await inPage(tabId, isComposing, [(await config()).typingRecentSec * 1000])) === true;
+}
+
+// Ahead of a drift word: read and judge the excerpt now, since that takes a model call.
+// Work found tells the engine at once (the detour ends); anything else waits in the
+// cache for the look. Outside the queue.
+function readAhead(need) {
+  typingOn(need.tabId)
+    .then((typing) => excerptVerdict(need, typing ? "focus" : "view"))
+    .then((v) => v.label === "related" && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
+    .catch((err) => log({ type: "llm", ts: Date.now(), node: "secondLook", ok: false, error: String(err) }));
+}
+
+// When a drift word is due: is the person typing on the page right now, and what does
+// the excerpt say (read ahead, usually)? The verdict gets LOOK_WAIT_MS at most, so a
+// slow model never stalls the word; one that finds work later still ends the drift
+// through the read-ahead. Outside the queue; the answer is an engine input, and only
+// the verdict is kept. A failure answers "nothing seen", so the drift goes ahead.
+function secondLook(need) {
+  look(need).catch((err) =>
+    feed({ type: "second_look", ts: Date.now(), key: need.key, composing: false, error: String(err) }),
+  );
+}
+
+async function look(need) {
+  const composing = await typingOn(need.tabId);
+  const verdict = await Promise.race([
+    excerptVerdict(need, composing ? "focus" : "view"),
+    sleep(LOOK_WAIT_MS).then(() => ({ skipped: "slow" })),
+  ]);
+  await feed({ type: "second_look", ts: Date.now(), key: need.key, composing, ...verdict });
+}
+
+// One reading per page and starting point at a time: a look while the read-ahead still
+// waits for the model shares its answer.
+const inFlight = new Map();
+function excerptVerdict(need, from) {
+  const id = `${from}|${need.key}`;
+  if (!inFlight.has(id))
+    inFlight.set(
+      id,
+      judgeExcerpt(need, from).finally(() => inFlight.delete(id)),
+    );
+  return inFlight.get(id);
+}
+
+// {label, confidence, source} from the excerpt, or {skipped: why}. from: "focus" (the
+// field the person types in) or "view" (the middle of the window). A verdict counts for
+// cfg.lookHoldMin minutes, so a page is not read again on every drift word.
+async function judgeExcerpt(need, from) {
+  const cfg = await config();
+  const st = await store;
+  if (!mayRead(need.url, await readingNow())) return { skipped: "settings" };
+  const cacheKey = `look|${from}|${need.key}`;
+  const cached = await st.getCached(cacheKey);
+  if (cached && Date.now() - cached.ts < cfg.lookHoldMin * 60000)
+    return { label: cached.label, confidence: cached.confidence, source: "look-cache" };
+  const page = await inPage(need.tabId, readExcerpt, [need.url, EXCERPT_CHARS, EXCERPT_MIN_CHARS, from === "focus"]);
+  if (!page) return { skipped: "unreadable" };
+  if (page.password) return { skipped: "password" };
+  const { text, count } = redact(page.text);
+  if (!text) return { skipped: "empty" };
+  const intent = (await st.activeIntent()) ?? (await loadEngine()).intent;
+  if (!intent) return { skipped: "no goal" };
+  const settings = privateSettings((await loadModelSettings()) ?? {});
+  let complete;
+  try {
+    complete = modelClient(settings);
+  } catch {
+    return { skipped: "no model" };
+  }
+  const profile = await (await memory).profile().catch(() => null);
+  const r = await classifyRelevance(complete, { intent, url: need.url, title: need.title, profile, excerpt: text });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "secondLook",
+    model: settings.model ?? settings.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: r.source === "llm",
+    chars: text.length, // the size only: neither the text nor the model's reason, which may retell it
+    redactions: count,
+    ...(r.error && { error: r.error }),
+  });
+  if (r.source !== "llm") return { skipped: "model failed" };
+  await st.putCached({
+    key: cacheKey,
+    label: r.label,
+    confidence: r.confidence,
+    source: "look",
+    ts: Date.now(),
+  });
+  return { label: r.label, confidence: r.confidence, source: "look" };
 }
 
 // ---- Interventions -------------------------------------------------------
@@ -413,6 +558,8 @@ async function presence(prev, s, input) {
   const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
   if (!changed || !s.current?.url) return;
   const away = ["break", "paused"].includes(s.state);
+  // Typing is noted from the start of the page (its time only), for the second look.
+  if (s.intent && !away) await inPage(input.tabId, watchTyping);
   if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
   else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
 }
@@ -490,12 +637,22 @@ async function takeMeBack(last) {
   }
 }
 
-// page: {url, host, title} from the trigger's evidence.
+// page: {url, host, title} from the trigger's evidence. On a whole site the label is
+// for this visit; memory hears about it once it lasts (relevance.js nextLabel).
 async function markRelated(page, intent, ts) {
+  const cfg = await config();
+  const st = await store;
   const key = labelKeys(intent.topic, page.url, page.title)[0];
-  const label = { key, label: "related", topic: intent.topic, host: page.host, title: page.title, ts };
-  await (await store).putLabel(label);
+  const prev = await st.getLabel(key);
+  const label = nextLabel(
+    prev,
+    { key, topic: intent.topic, host: page.host, title: page.title, ts, day: dayKey(ts, cfg) },
+    cfg,
+  );
+  await st.putLabel(label);
   await log({ type: "feedback", ts, kind: "label", payload: label });
+  const lastedBefore = prev?.days && prev.until == null;
+  if (label.until != null || lastedBefore) return;
   await (
     await memory
   ).add({

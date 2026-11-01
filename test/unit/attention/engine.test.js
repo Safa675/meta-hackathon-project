@@ -11,9 +11,10 @@ const REPO = ["https://github.com/acme/shop", "cart.js · acme/shop"];
 const VIDEO = ["https://www.youtube.com/watch?v=a", "Top 10 F1 crashes"];
 const SEARCH = ["https://www.google.com/search?q=x", "x - Google Search"];
 
-// Task 3 tests the engine alone: every candidate passes at level 1.
+// Task 3 tests the engine alone: every candidate passes at level 1. The second look
+// is off here and tested on its own below.
 const stubDecide = (policy, cand) => ({ policy, trigger: { ...cand, level: 1 } });
-const CFG = withOverrides();
+const CFG = withOverrides({ secondLook: false });
 CFG.decide = stubDecide;
 
 const ctx = (ts, [url, title], label, extra = {}) => ({
@@ -334,4 +335,185 @@ test("evidence counts time away from work, not time on this page", () => {
   assert.equal(drift.ts, t0 + 55 * S);
   assert.equal(drift.evidence.awaySec, 45);
   assert.equal(drift.evidence.host, "x.com");
+});
+
+// ---- The second look (issue #5) ----------------------------------------------
+// With the real policy and the second look on. The video becomes unrelated at +10 s,
+// so the budget reaches 30 s (tolerance 45 − lead 15) at +40 s: the excerpt is read
+// ahead. It reaches 45 s at +55 s: typing is checked, and the answer at +56 s decides.
+
+const LOOK = withOverrides();
+const videoKey = relevanceKey(intent.id, ...VIDEO);
+const answer = (ts, fields, key = videoKey) => ({ type: "second_look", ts, key, composing: false, ...fields });
+const typing = (ts) => answer(ts, { composing: true });
+const toVideo = [setIntent(t0), ctx(t0, REPO, "related"), ctx(t0 + 10 * S, VIDEO, "unrelated")];
+const drifts = (triggers) => triggers.filter((t) => t.kind === "drift");
+const asked = (out, type) => out.filter((o) => o.type === type).map((o) => [(o.ts - t0) / S, o.url]);
+
+test("second look: the excerpt is read ahead; typing is checked when the word is due", () => {
+  const { out } = run(toVideo, { until: t0 + 60 * S, cfg: LOOK });
+  assert.deepEqual(asked(out, "read_ahead"), [[40, VIDEO[0]]]);
+  assert.deepEqual(asked(out, "need_second_look"), [[55, VIDEO[0]]]);
+  assert.equal(out.find((o) => o.type === "read_ahead").key, videoKey);
+});
+
+test("second look: 'nothing seen' lets the drift come, at L1", () => {
+  const { triggers } = run([...toVideo, answer(t0 + 56 * S)], { until: t0 + 60 * S, cfg: LOOK });
+  assert.equal(drifts(triggers)[0].ts, t0 + 56 * S);
+  assert.equal(drifts(triggers)[0].level, 1);
+});
+
+test("second look: with no answer the drift waits, then goes ahead at the timeout", () => {
+  const { triggers } = run(toVideo, { until: t0 + 80 * S, cfg: LOOK });
+  assert.equal(drifts(triggers)[0].ts, t0 + 75 * S); // asked at +55, timeout 20 s
+});
+
+test("second look: an excerpt read ahead that shows work ends the detour before any word", () => {
+  const { out, state, triggers } = run([...toVideo, answer(t0 + 42 * S, { label: "related", confidence: 0.9 })], {
+    until: t0 + 120 * S,
+    cfg: LOOK,
+  });
+  assert.deepEqual(drifts(triggers), []);
+  assert.deepEqual(asked(out, "need_second_look"), []);
+  assert.equal(state.state, "focused");
+  assert.equal(state.current.source, "look");
+  assert.equal(state.lastRelevant.url, REPO[0], "Take me back still goes to the repo");
+});
+
+test("second look: a 'related' the model is unsure of does not stop the drift", () => {
+  const unsure = { label: "related", confidence: 0.4 };
+  const { triggers } = run([...toVideo, answer(t0 + 42 * S, unsure), answer(t0 + 56 * S, unsure)], {
+    until: t0 + 60 * S,
+    cfg: LOOK,
+  });
+  assert.equal(drifts(triggers)[0].ts, t0 + 56 * S);
+});
+
+test("second look: typing holds the first word twice, then it comes at L1", () => {
+  // Typing at +56 → hold (until +176); look again, typing at +177 → hold (until +297);
+  // look again, typing at +298 → no holds left: the drift.
+  const { out, triggers } = run([...toVideo, typing(t0 + 56 * S), typing(t0 + 177 * S), typing(t0 + 298 * S)], {
+    until: t0 + 310 * S,
+    cfg: LOOK,
+  });
+  assert.equal(drifts(triggers)[0].ts, t0 + 298 * S);
+  assert.equal(drifts(triggers)[0].level, 1);
+  assert.deepEqual(
+    asked(out, "need_second_look").map(([ts]) => ts),
+    [55, 176, 297],
+  );
+  assert.equal(asked(out, "read_ahead").length, 1, "the excerpt is read once");
+});
+
+test("second look: an answer for a page already left is ignored", () => {
+  const REDDIT = ["https://www.reddit.com/r/formula1", "r/formula1"];
+  const inputs = [
+    ...toVideo,
+    ctx(t0 + 56 * S, REDDIT, "unrelated"),
+    answer(t0 + 57 * S, { label: "related", confidence: 0.9 }), // about the video
+  ];
+  const { out, state, triggers } = run(inputs, { until: t0 + 80 * S, cfg: LOOK });
+  assert.equal(state.current.label, "unrelated");
+  assert.deepEqual(asked(out, "need_second_look").at(-1), [56, REDDIT[0]], "Reddit is looked at in turn");
+  assert.equal(drifts(triggers)[0].ts, t0 + 75 * S); // the word waits from +55, one timeout
+});
+
+test("second look: none in do-not-disturb", () => {
+  const dnd = { type: "session", ts: t0, kind: "mode", payload: { mode: "dnd" } };
+  const { out, triggers } = run([...toVideo, dnd], { until: t0 + 60 * S, cfg: LOOK });
+  assert.deepEqual([...asked(out, "read_ahead"), ...asked(out, "need_second_look")], []);
+  assert.equal(drifts(triggers)[0].ts, t0 + 55 * S);
+  assert.equal(drifts(triggers)[0].level, 0);
+});
+
+test("second look: going back to work ends a hold", () => {
+  const { state } = run([...toVideo, typing(t0 + 56 * S), ctx(t0 + 60 * S, REPO, "related")], {
+    until: t0 + 61 * S,
+    cfg: LOOK,
+  });
+  assert.deepEqual([state.holds, state.holdUntil, state.look, state.readAheadKey], [0, null, null, null]);
+});
+
+test("second look: nextWakeAt wakes for the read-ahead, the timeout and the hold, never for a past time", () => {
+  const at = (until, extra = []) => nextWakeAt(run([...toVideo, ...extra], { until, cfg: LOOK }).state, LOOK);
+  assert.equal(at(t0 + 20 * S), t0 + 40 * S, "the read-ahead, before the tolerance");
+  assert.equal(at(t0 + 56 * S), t0 + 75 * S, "the look's timeout");
+  assert.equal(at(t0 + 57 * S, [typing(t0 + 56 * S)]), t0 + 176 * S, "the hold's end");
+  assert.ok(at(t0 + 76 * S) > t0 + 76 * S, "after the timeout: the next escalation, not the past timeout");
+});
+
+test("second look: a new page during a drift is read ahead; work there ends the drift", () => {
+  // L1 about the video at +56; at +70 a chat on another site, whose excerpt (read ahead
+  // at once) shows work: no L2 (it was due at +86), and no look was needed for it.
+  const CHAT = ["https://www.linkedin.com/feed/", "Feed | LinkedIn"];
+  const chatKey = relevanceKey(intent.id, ...CHAT);
+  const { out, triggers } = run(
+    [
+      ...toVideo,
+      answer(t0 + 56 * S),
+      ctx(t0 + 70 * S, CHAT, "unrelated"),
+      answer(t0 + 72 * S, { label: "related", confidence: 0.9 }, chatKey),
+    ],
+    { until: t0 + 120 * S, cfg: LOOK },
+  );
+  assert.deepEqual(
+    drifts(triggers).map((t) => (t.ts - t0) / S),
+    [56],
+  );
+  assert.deepEqual(asked(out, "need_second_look"), [[55, VIDEO[0]]]);
+  assert.deepEqual(asked(out, "read_ahead").at(-1), [70, CHAT[0]]);
+});
+
+test("second look: a hold ends when the person moves to another page", () => {
+  // Typing on the video holds at +56 (until +176); at +60 another unrelated page, where
+  // nobody types: it is looked at, and the drift word comes for it.
+  const REDDIT = ["https://www.reddit.com/r/formula1", "r/formula1"];
+  const redditKey = relevanceKey(intent.id, ...REDDIT);
+  const { triggers } = run(
+    [...toVideo, typing(t0 + 56 * S), ctx(t0 + 60 * S, REDDIT, "unrelated"), answer(t0 + 61 * S, {}, redditKey)],
+    { until: t0 + 70 * S, cfg: LOOK },
+  );
+  assert.equal(drifts(triggers)[0].ts, t0 + 61 * S);
+  assert.equal(drifts(triggers)[0].evidence.url, REDDIT[0]);
+});
+
+// Review findings on the first version of the second look.
+
+test("second look: every drift word checks typing again (L2 holds while the person types)", () => {
+  const { out, triggers } = run([...toVideo, answer(t0 + 56 * S), typing(t0 + 87 * S)], {
+    until: t0 + 120 * S,
+    cfg: LOOK,
+  });
+  assert.deepEqual(
+    asked(out, "need_second_look").map(([ts]) => ts),
+    [55, 86],
+  );
+  assert.deepEqual(
+    drifts(triggers).map((t) => [(t.ts - t0) / S, t.level]),
+    [[56, 1]],
+    "L2 waits: the person is typing",
+  );
+});
+
+test("second look: a blocked escalation never leaves a past wake time (no tick loop)", () => {
+  // L1 at +56; the L2 look at +86 finds typing → hold until +207. Every step in between
+  // must wake in the future.
+  let state = initialState();
+  const inputs = [...toVideo, answer(t0 + 56 * S), typing(t0 + 87 * S)].sort((a, b) => a.ts - b.ts);
+  for (let ts = t0, i = 0; ts <= t0 + 200 * S; ts += S) {
+    while (i < inputs.length && inputs[i].ts <= ts) state = step(state, inputs[i++], LOOK).state;
+    state = step(state, tick(ts), LOOK).state;
+    const at = nextWakeAt(state, LOOK);
+    assert.ok(at == null || at > ts, `wake at ${(at - t0) / S} s when it is ${(ts - t0) / S} s`);
+  }
+});
+
+test("second look: hopping between pages faster than the model answers still gets a word", () => {
+  // A new unrelated page every 12 s from +60 and no answer ever: the word waits once
+  // (from +55), not again for every page.
+  const pages = [];
+  for (let i = 0; i < 10; i++)
+    pages.push(ctx(t0 + (60 + 12 * i) * S, [`https://site${i}.example/`, `Page ${i}`], "unrelated"));
+  const { triggers } = run([...toVideo, ...pages], { until: t0 + 180 * S, cfg: LOOK });
+  assert.equal(drifts(triggers)[0]?.ts, t0 + 75 * S);
 });

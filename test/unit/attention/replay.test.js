@@ -88,3 +88,32 @@ test("review I3: replay does not tick through a sleep", () => {
     triggers.map((t) => `${t.kind}@${(t.ts - t0) / S}`).join(" "),
   );
 });
+
+test("issue #5: a log with second-look answers replays them", () => {
+  // The same visit (the video from +60 s, so its excerpt is read ahead at +90 s), but
+  // the live worker found a work chat on the page.
+  const videoKey = relevanceKey("i1", "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes");
+  const withLook = {
+    events: [...log.events, { type: "second_look", ts: t0 + 92 * S, key: videoKey, label: "related", confidence: 0.9 }],
+  };
+  assert.deepEqual(replay(withLook).triggers, []);
+});
+
+test("review: a log with second-look answers still finds them when replayed with other settings", () => {
+  // Live, the excerpt read ahead at +90 s showed work. Replayed with tolerance 60 s the
+  // read-ahead comes at +105 s; the recorded verdict (15 s earlier) still applies.
+  const videoKey = relevanceKey("i1", "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes");
+  const withLook = {
+    events: [...log.events, { type: "second_look", ts: t0 + 92 * S, key: videoKey, label: "related", confidence: 0.9 }],
+  };
+  assert.deepEqual(replay(withLook, { cfg: { ...DEFAULTS, toleranceSec: 60 } }).triggers, []);
+});
+
+test("review: recorded typing holds the word in replay, as it did live", () => {
+  const videoKey = relevanceKey("i1", "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes");
+  const typed = (ts) => ({ type: "second_look", ts, key: videoKey, composing: true });
+  // Live: typing at the word (+106 s), and again when the hold ended (+227 s).
+  const withTyping = { events: [...log.events, typed(t0 + 106 * S), typed(t0 + 227 * S)] };
+  const { triggers } = replay(withTyping);
+  assert.ok(!triggers.some((t) => t.kind === "drift" && t.ts < t0 + 200 * S), "held while typing");
+});

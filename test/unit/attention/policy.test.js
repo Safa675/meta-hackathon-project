@@ -80,7 +80,7 @@ test("the engine uses the policy by default", () => {
   let state = initialState();
   const out = [];
   const feed = (input) => {
-    const r = step(state, input, DEFAULTS);
+    const r = step(state, input, { ...DEFAULTS, secondLook: false }); // the policy alone, no second look
     state = r.state;
     out.push(...r.out);
   };

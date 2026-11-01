@@ -1,7 +1,10 @@
 // End-to-end: the real extension in Chromium against a local fake model.
 // Goal from the popup → related page → unrelated page → drift trigger, badge and
 // popup card → "Take me back" (also when the related tab was closed) → "This is
-// for my task" silences that page → the exported event log holds it all.
+// for my task" silences that page, for a while → the second look (issue #5): a work
+// chat on a social page is not a drift, typing holds the nudge, a chat box left
+// focused does not speak for the feed but typing in it does, a page with a password
+// field is not read → the exported event log holds it all.
 // Saves screenshots of the popup and settings page to SCREENSHOT_DIR when set.
 import { createRequire } from "node:module";
 import http from "node:http";
@@ -18,6 +21,9 @@ const shots = process.env.SCREENSHOT_DIR;
 // calls the video unrelated and everything else related.
 const calls = [];
 const nudgeCalls = [];
+// Typed into a reply box, then left: form values are never read, so it must never
+// reach the model. Not secret-shaped, so redaction alone would not hide it.
+const DRAFT = "unsent draft about hunter2 and the moon";
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -26,6 +32,48 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(`<title>${title}</title><p>${title}`);
   if (req.url === "/repo") return page("cart.js · acme/shop");
   if (req.url === "/video") return page("Top 10 F1 crashes - Video");
+  // Issue #5: one social site, three pages. The title says "Social" on all of them.
+  const reply = `<textarea id="reply" placeholder="Write a message"></textarea>`;
+  if (req.url === "/chat")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Messages | Social</title><main><h1>Ali</h1>` +
+          `<p>Ali: did you find why the checkout drops the last item from the cart?</p>` +
+          `<p>Me: yes, cart.js splices the wrong index when the quantity is zero.</p>` +
+          `<p>Ali: nice. can you write the failing test for the checkout bug first?</p>` +
+          `<p>Me: on it, then I'll open the pull request for the checkout fix tonight.</p>` +
+          `<p>Ali: great, ping me when the checkout test is red so I can review it.</p>${reply}</main>`,
+      );
+  if (req.url === "/compose")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(`<title>Feed | Social</title><main><p>Ten cats that look like famous paintings.</p>${reply}</main>`);
+  // A feed in the middle, a chat about the goal docked at the bottom (LinkedIn's layout).
+  if (req.url === "/side")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Home | Social</title><main style="padding-bottom:260px">` +
+          `<p>Promoted: is your brand visible in AI answers? Get a free analysis today.</p>` +
+          `<p>Deniz started a new role as head of growth at Acme. Congratulations!</p>` +
+          `<p>Five lessons I learned from running my first marathon in the rain.</p>` +
+          `<p>Ten cats that look like famous paintings, ranked by a museum curator.</p>` +
+          `<p>Hiring: senior designer, remote, apply before Friday.</p></main>` +
+          `<aside style="position:fixed;bottom:0;left:0;right:0;height:240px;overflow:auto;background:#eee">` +
+          `<p>Ali: the checkout still drops the last cart item when the quantity is zero.</p>` +
+          `<p>Me: cart.js splices the wrong index, I am writing the failing test for it now.</p>` +
+          `<p>Ali: good, open the pull request for the checkout fix when the test is red.</p>` +
+          `<p>Me: will do, then the demo of the checkout flow.</p>` +
+          `<p>Ali: perfect, and add a note on the zero quantity edge case in the description.</p>${reply}</aside>`,
+      );
+  if (req.url === "/login")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Sign in | Social</title><main><p>Welcome back. Sign in to Social.</p>` +
+          `<input name="user"><input type="password" name="pass"></main>`,
+      );
   if (req.url !== "/v1/chat/completions") return res.writeHead(404).end();
   let body = "";
   req.on("data", (c) => (body += c));
@@ -39,9 +87,16 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
     }
     calls.push(messages);
-    const reply = /Top 10 F1 crashes/.test(messages.at(-1).content)
-      ? { label: "unrelated", confidence: 0.9, reason: "An F1 video, not the checkout bug." }
-      : { label: "related", confidence: 0.9, reason: "The shop repo." };
+    // The second look: judge the excerpt alone (the goal itself says "checkout").
+    const excerpt = messages.at(-1).content.match(/^Page excerpt: (.*)$/m)?.[1];
+    const reply =
+      excerpt !== undefined
+        ? /checkout/.test(excerpt)
+          ? { label: "related", confidence: 0.9, reason: "A chat about the checkout bug." }
+          : { label: "unrelated", confidence: 0.9, reason: "Not about the checkout bug." }
+        : /Top 10 F1 crashes|\| Social/.test(messages.at(-1).content)
+          ? { label: "unrelated", confidence: 0.9, reason: "Not the checkout bug." }
+          : { label: "related", confidence: 0.9, reason: "The shop repo." };
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
   });
 });
@@ -49,6 +104,10 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const repo = `http://127.0.0.1:${port}/repo`;
 const video = `http://localhost:${port}/video`;
+const chat = `http://localhost:${port}/chat`;
+const compose = `http://localhost:${port}/compose`;
+const side = `http://localhost:${port}/side`;
+const login = `http://localhost:${port}/login`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -71,9 +130,17 @@ watch(settingsPage);
 await settingsPage.goto(`${ext}/options/options.html`);
 await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
-  await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" });
+  // Remembered, so the key survives the restart below and the second look can call the model.
+  await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" }, { remember: true });
   await chrome.storage.local.set({
-    attentionConfig: { toleranceSec: 3, escalateAfterSec: 4, fragMinSwitches: 1000, idleAfterSec: 86400 },
+    attentionConfig: {
+      toleranceSec: 3,
+      escalateAfterSec: 4,
+      fragMinSwitches: 1000,
+      idleAfterSec: 86400,
+      holdSec: 2,
+      labelMin: 0.1, // "This is for my task" on a site: 6 s here
+    },
   });
 }, `http://127.0.0.1:${port}/v1`);
 
@@ -195,8 +262,63 @@ await videoTab.bringToFront();
 const drift3 = await waitForNewDrift(drift5.id);
 await clickOnCard("#for-my-task");
 await videoTab.bringToFront();
-await videoTab.waitForTimeout(6000);
+await videoTab.waitForTimeout(5000);
 const afterLabel = await lastTrigger();
+
+// …for a while: once the site label has run out, the video is a drift again.
+await videoTab.waitForTimeout(2000);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const drift6 = await waitForNewDrift(drift3.id);
+
+// Issue #5, the second look. A chat about the goal on a social page: the title says
+// unrelated, the excerpt says work, so no nudge. A draft typed into its reply box, then
+// left, must never reach the model.
+const chatTab = await ctx.newPage();
+await chatTab.goto(chat);
+await chatTab.fill("#reply", DRAFT);
+await chatTab.evaluate(() => document.activeElement.blur());
+await chatTab.bringToFront();
+await chatTab.waitForTimeout(6000);
+const afterChat = await lastTrigger();
+
+// Typing on an unrelated page holds the nudge twice (2 s each here), then it comes at L1.
+const composeTab = await ctx.newPage();
+await composeTab.goto(compose);
+await composeTab.bringToFront();
+await composeTab.locator("#tuck-companion").waitFor({ state: "attached" }); // Tuck there: typing is noted
+await composeTab.click("#reply");
+await composeTab.keyboard.type("brb");
+const typingFrom = Date.now();
+const drift7 = await waitForNewDrift(afterChat.id);
+const heldMs = Date.now() - typingFrom;
+
+// Review: the chat box at the bottom is focused, but nobody types. The page is judged by
+// the feed in the middle: the nudge comes, with no hold. Typing in the box then makes
+// the next look read the chat, which is work: the drift ends.
+const sideTab = await ctx.newPage();
+await sideTab.goto(side);
+await sideTab.bringToFront();
+await sideTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await sideTab.click("#reply");
+const sideFrom = Date.now();
+const driftSide = await waitForNewDrift(drift7.id);
+const sideMs = Date.now() - sideFrom;
+await sideTab.keyboard.type("on it");
+await sideTab.waitForTimeout(6000);
+const afterTyping = await lastTrigger();
+
+// A page with a password field is not read: the nudge comes without an excerpt.
+const loginTab = await ctx.newPage();
+await loginTab.goto(login);
+await loginTab.bringToFront();
+const drift8 = await waitForNewDrift(driftSide.id);
+
+// Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
+// nothing is read: the chat page is a drift again.
+await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const driftOff = await waitForNewDrift(drift8.id);
 
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
@@ -235,7 +357,9 @@ assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
 assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
 assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
-const videoCalls = calls.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
+const looks = calls.filter((m) => /excerpt/.test(m[0].content));
+const judged = calls.filter((m) => !/excerpt/.test(m[0].content));
+const videoCalls = judged.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
 assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
 assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
 assert.equal(cardText, "Still on the video? Back to the failing test.", "L2 uses the drafted line too");
@@ -243,6 +367,55 @@ assert.equal(backTo, repo);
 assert.equal(reopened, repo);
 assert.equal(afterLabel.id, drift3.id, "no new trigger on a page marked as work");
 assert.equal(afterLabel.choice, "related");
+assert.equal(drift6.evidence.url, video, "a site marked as work for one visit is a drift again later");
+// The second look.
+assert.equal(afterChat.id, drift6.id, "no nudge on a chat about the goal");
+const chatLook = looks.find((m) => /Page title: Messages \| Social/.test(m.at(-1).content));
+assert.ok(chatLook, "the chat was looked at");
+assert.match(chatLook.at(-1).content, /Page excerpt: .*splices the wrong index/);
+assert.ok(!calls.some((m) => JSON.stringify(m).includes("hunter2")), "a typed draft never reaches the model");
+assert.ok(
+  log.events.some((e) => e.type === "second_look" && e.label === "related" && e.source === "look"),
+  "the chat's verdict is in the log",
+);
+assert.ok(
+  log.events.some((e) => e.type === "llm" && e.node === "secondLook" && e.chars > 0 && !("text" in e)),
+  "the log keeps the look's size, never its text",
+);
+assert.equal(drift7.evidence.url, compose);
+assert.equal(drift7.level, 1, "after the holds the first word is L1");
+assert.ok(heldMs >= 3500, `typing held the nudge (${heldMs} ms)`);
+assert.ok(
+  log.events.filter((e) => e.type === "second_look" && e.composing).length >= 3,
+  "typing was seen at each look",
+);
+assert.equal(driftSide.evidence.url, side, "a focused chat box does not speak for the feed");
+assert.ok(sideMs < 3500, `no hold without typing (${sideMs} ms)`);
+assert.equal(afterTyping.id, driftSide.id, "typing in the chat box: the chat is read, it is work, no more nudges");
+const sideLooks = looks.filter((m) => /Page title: Home \| Social/.test(m.at(-1).content));
+assert.ok(
+  sideLooks.some((m) => /Page excerpt: .*Five lessons/.test(m.at(-1).content)),
+  "without typing, the middle (the feed) was read",
+);
+const typedLook = sideLooks.find((m) => /Page excerpt: .*splices the wrong index/.test(m.at(-1).content));
+assert.ok(typedLook, "with typing, the chat around the box was read");
+assert.doesNotMatch(typedLook.at(-1).content, /Five lessons/, "the chat, not the whole page");
+assert.ok(!sideLooks.some((m) => /on it/.test(m.at(-1).content.split("Page excerpt:")[1] ?? "")), "not the draft");
+assert.equal(drift8.evidence.url, login);
+assert.equal(driftOff.evidence.url, chat, "with reading off, a cached verdict does not count");
+assert.ok(
+  log.events.some((e) => e.type === "second_look" && e.skipped === "settings"),
+  "with reading off, nothing is read",
+);
+assert.ok(!looks.some((m) => /Sign in \| Social/.test(m.at(-1).content)), "the login page was not read");
+assert.ok(
+  log.events.some((e) => e.type === "second_look" && e.skipped === "password"),
+  "the skip is in the log",
+);
+assert.ok(
+  looks.some((m) => /Page title: Top 10 F1 crashes/.test(m.at(-1).content)),
+  "the video was looked at before its nudges",
+);
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");

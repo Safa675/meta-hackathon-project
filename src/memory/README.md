@@ -60,6 +60,9 @@ await memory.distill(complete, { minutes: 60 });
 
 // Upkeep (background alarm)
 await memory.maintain();
+
+// Redaction for any text that leaves the device (a page excerpt): { text, count }
+import { redact } from "../memory/index.js";
 ```
 
 Entry fields follow the second-brain record: `kind` (`decision|fact|preference|event|lesson|todo`), `topic` (slug), `title` (3-120 chars), `date`, `source`, `context`, `result`, `evidence`, `next`.

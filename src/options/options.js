@@ -2,6 +2,7 @@ import { Memory } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
 import { dueLabel, localDate } from "../memory/due.js";
+import { NEVER_READ, readingSettings } from "../attention/reading.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -150,6 +151,27 @@ $("reread").onclick = async () => {
 };
 
 await showProfile();
+
+// ---- Page reading --------------------------------------------------------
+
+const reading = readingSettings((await chrome.storage.local.get("pageReading")).pageReading);
+$("read-pages").checked = reading.enabled;
+$("never-read").value = reading.neverRead.join("\n");
+
+$("save-reading").onclick = async () => {
+  const neverRead = $("never-read")
+    .value.split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  await chrome.storage.local.set({ pageReading: { enabled: $("read-pages").checked, neverRead } });
+  $("reading-status").textContent = $("read-pages").checked
+    ? `Saved. ${neverRead.length} sites are never read.`
+    : "Saved. Pages are not read.";
+};
+$("reset-reading").onclick = () => {
+  $("never-read").value = NEVER_READ.join("\n");
+  $("reading-status").textContent = "The default list is back. Save to keep it.";
+};
 
 // ---- Event log -----------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { relevanceMessages, parseRelevance, classifyRelevance } from "../../../src/agent/relevance.js";
+import { relevanceMessages, parseRelevance, classifyRelevance, privateSettings } from "../../../src/agent/relevance.js";
 
 const input = {
   intent: { title: "Fix the checkout bug in the shop repo", steps: ["Write the failing test"] },
@@ -96,4 +96,38 @@ test("what is known about the person reaches the prompt, and is absent without i
 
   const [, without] = relevanceMessages(input);
   assert.doesNotMatch(without.content, /About them:/);
+});
+
+// ---- The second look (issue #5) ------------------------------------------------
+
+test("with an excerpt the prompt judges what is on screen, not the site", () => {
+  const excerpt = "Ayse: so the differentiators are the pet and the terminal link? Me: yes, plus memory import";
+  const [system, user] = relevanceMessages({
+    ...input,
+    url: "https://www.linkedin.com/feed/",
+    title: "Feed | LinkedIn",
+    excerpt,
+  });
+  assert.match(system.content, /excerpt/);
+  assert.match(system.content, /a conversation about the goal on a\nsocial site is related/);
+  assert.match(user.content, /Page excerpt: Ayse: so the differentiators/);
+  const [plain] = relevanceMessages(input);
+  assert.match(plain.content, /site and title only/, "without an excerpt the prompt is unchanged");
+  assert.doesNotMatch(relevanceMessages(input)[1].content, /Page excerpt/);
+});
+
+test("page text never goes to Meta's Contributor tier", () => {
+  assert.deepEqual(privateSettings({ provider: "meta-contributor", apiKey: "k" }), {
+    provider: "meta",
+    apiKey: "k",
+    model: undefined,
+  });
+  assert.equal(privateSettings({ apiKey: "k" }).provider, "meta", "Contributor is the default provider");
+  assert.equal(privateSettings({ provider: "meta-contributor", model: "muse-spark-1.3-contributor" }).model, undefined);
+  assert.equal(privateSettings({ provider: "meta-contributor", model: "muse-spark-2" }).model, "muse-spark-2");
+  // Review: Contributor typed as the model on plain Meta.
+  assert.equal(privateSettings({ provider: "meta", model: "muse-spark-1.3-contributor" }).model, undefined);
+  assert.equal(privateSettings({ provider: "meta", model: "fake", baseUrl: "x" }).model, "fake");
+  const other = { provider: "openrouter", apiKey: "k" };
+  assert.equal(privateSettings(other), other);
 });
